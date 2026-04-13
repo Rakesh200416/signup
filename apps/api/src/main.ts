@@ -12,8 +12,9 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
+  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
   app.enableCors({
-    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    origin: [frontendUrl, "http://localhost:3000", "http://127.0.0.1:3000"],
     credentials: true,
     methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin", "X-CSRF-Token"],
@@ -43,7 +44,8 @@ async function bootstrap() {
   await throttlerGuard.onModuleInit();
   app.useGlobalGuards(throttlerGuard);
 
-  await app.listen(process.env.API_PORT ?? 3001);
-  console.log(`API running on http://localhost:${process.env.API_PORT ?? 3001}`);
+  const port = process.env.PORT ?? process.env.API_PORT ?? 3001;
+  await app.listen(port);
+  console.log(`API running on http://localhost:${port}`);
 }
 bootstrap();
