@@ -1,0 +1,138 @@
+.footer-container {
+  padding: 60px 8% 30px 8%;
+  background-color: #f0f3f8;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  gap: 30px;
+  margin-bottom: 40px;
+}
+
+.footer-column {
+  flex: 1;
+}
+
+.column-title {
+  color: #2b50d8;
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.column-text {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #555;
+  margin-bottom: 20px;
+}
+
+.start-btn {
+  background: #f0f3f8;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 10px;
+  color: #444;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 5px 5px 10px #d1d9e6, -5px -5px 10px #ffffff;
+  transition: all 0.2s ease-in-out;
+  margin-bottom: 25px;
+}
+
+.start-btn:hover {
+  box-shadow: 2px 2px 5px #d1d9e6, -2px -2px 5px #ffffff;
+  transform: scale(0.98);
+}
+
+.social-icons {
+  display: flex;
+  gap: 12px;
+}
+
+.icon-box {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f3f8;
+  border-radius: 8px;
+  color: #2b50d8;
+  box-shadow: 4px 4px 8px #d1d9e6, -4px -4px 8px #ffffff;
+  transition: 0.3s;
+  cursor: pointer;
+}
+
+.icon-box:hover {
+  box-shadow: inset 3px 3px 6px #d1d9e6, inset -3px -3px 6px #ffffff;
+  color: #1a3ab1;
+}
+
+.footer-links {
+  list-style: none;
+  padding: 0;
+}
+
+.footer-links li {
+  margin-bottom: 15px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  color: #444;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: fit-content;
+}
+
+.footer-links li:hover {
+  background: #f0f3f8;
+  color: #2b50d8;
+  box-shadow: inset 4px 4px 8px #d1d9e6, inset -4px -4px 8px #ffffff;
+  transform: translateX(5px);
+}
+
+.map-wrapper {
+  background: #f0f3f8;
+  padding: 12px;
+  border-radius: 15px;
+  box-shadow: 8px 8px 16px #d1d9e6, -8px -8px 16px #ffffff;
+}
+
+.map-wrapper iframe {
+  border-radius: 10px;
+  display: block;
+}
+
+.copyright-bar {
+  margin-top: 30px;
+  padding: 15px;
+  text-align: center;
+  background: #f0f3f8;
+  border-radius: 10px;
+  color: #2b50d8;
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: 6px 6px 12px #d1d9e6, -6px -6px 12px #ffffff;
+}
+
+@media (max-width: 900px) {
+  .footer-content {
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .footer-column {
+    text-align: center;
+  }
+
+  .social-icons {
+    justify-content: center;
+  }
+
+  .footer-links li {
+    margin: 0 auto 10px auto;
+  }
+}

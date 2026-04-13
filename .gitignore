@@ -1,0 +1,16 @@
+node_modules/
+.env
+node_modules/
+.env
+.next/
+dist/
+*.tsbuildinfo
+# Codex / AI tool folders
+.codex/
+.codeium/
+
+# Logs & temp
+*.log
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

@@ -1,0 +1,229 @@
+/* ================= GLOBAL & RESET ================= */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background: #f0f2f5;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.logo img {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+}
+
+/* ================= HEADER CONTAINER ================= */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 40px;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+  background: #f0f2f5;
+  border-bottom: 1px solid rgba(0,0,0,0.03);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+}
+
+.logo {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #333;
+  cursor: pointer;
+}
+
+/* ================= MOBILE MENU ICON (FIXED) ================= */
+.menu-icon {
+  display: none; /* HIDDEN BY DEFAULT ON DESKTOP */
+  font-size: 26px;
+  cursor: pointer;
+  color: #444;
+  padding: 8px;
+  border-radius: 10px;
+  transition: 0.2s;
+  /* Premium Neumorphic Look */
+  box-shadow: 4px 4px 8px #d1d9e6, -4px -4px 8px #ffffff;
+}
+
+.menu-icon:hover {
+  box-shadow: inset 2px 2px 5px #d1d9e6, inset -2px -2px 5px #ffffff;
+}
+
+/* ================= NAV ITEMS & HOVER SHARED ================= */
+.nav {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.nav-item:hover, 
+.dropdown-item:hover, 
+.submenu-item:hover, 
+.signin:hover {
+  color: #2f80ed !important;
+  box-shadow: inset 4px 4px 8px #d1d9e6, inset -4px -4px 8px #ffffff;
+}
+
+.nav-item, .signin {
+  position: relative;
+  cursor: pointer;
+  padding: 10px 18px;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  font-size: 14px;
+  color: #444;
+  white-space: nowrap;
+}
+
+/* ================= DESKTOP DROPDOWNS (SUB-ITEMS) ================= */
+.dropdown {
+  position: absolute;
+  top: 100%; 
+  left: 0;
+  width: 260px;
+  background: #f0f2f5;
+  border-radius: 12px;
+  padding: 12px;
+  display: none;
+  z-index: 1001;
+  box-shadow: 8px 8px 16px #d1d9e6, -8px -8px 16px #ffffff;
+  margin-top: 5px;
+}
+
+.nav-item:hover > .dropdown {
+  display: block;
+  animation: fadeIn 0.3s ease;
+}
+
+.dropdown-item {
+  padding: 12px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+  font-size: 14px;
+  color: #555;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+/* ================= DESKTOP SUBMENU (SUB-SUB ITEMS) ================= */
+.submenu {
+  position: absolute;
+  top: 0;
+  left: 98%; 
+  width: 240px;
+  background: #f0f2f5;
+  border-radius: 12px;
+  padding: 10px;
+  display: none;
+  z-index: 1002;
+  box-shadow: 8px 8px 16px #d1d9e6, -8px -8px 16px #ffffff;
+}
+
+.dropdown-item:hover > .submenu {
+  display: block;
+  animation: fadeIn 0.2s ease;
+}
+
+.submenu-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #666;
+  transition: 0.2s;
+}
+
+/* ================= MOBILE VIEW (CORRECTED) ================= */
+@media (max-width: 768px) {
+  .menu-icon {
+    display: block; /* REVEALED ON MOBILE ONLY */
+  }
+
+  .nav {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    background: #f0f2f5;
+    padding: 20px;
+    gap: 15px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  .nav.mobile-open {
+    display: flex;
+  }
+
+  .nav-item {
+    width: 100%;
+    text-align: left;
+    padding: 15px;
+    box-shadow: 4px 4px 8px #d1d9e6, -4px -4px 8px #ffffff;
+  }
+
+  .dropdown {
+    position: static;
+    width: 100%;
+    box-shadow: inset 3px 3px 6px #d1d9e6, inset -3px -3px 6px #ffffff;
+    margin-top: 10px;
+    background: rgba(0,0,0,0.02);
+    display: none;
+  }
+
+  .dropdown.show {
+    display: block;
+  }
+
+  .dropdown-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .submenu {
+    position: static;
+    width: 100%;
+    display: block;
+    box-shadow: none;
+    background: transparent;
+    padding-left: 20px;
+    border-left: 2px solid #2f80ed;
+    margin-top: 10px;
+  }
+
+  .signin {
+    width: 100%;
+    margin-top: 10px;
+    box-shadow: 4px 4px 8px #d1d9e6, -4px -4px 8px #ffffff;
+  }
+}
+
+/* ================= ANIMATIONS & ARROWS ================= */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.arrow {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  transition: transform 0.3s ease;
+}
+
+.arrow.rotate {
+  transform: rotate(180deg);
+}
