@@ -405,11 +405,9 @@ export function SignupWizard() {
 
     try {
       setIsSubmitting(true);
-      // const csrfToken = await fetchCsrfToken();
       const response = await api.post(
         "/auth/signup",
         signupPayload,
-        // { headers: { "X-CSRF-Token": csrfToken } },
       );
       setSignupComplete(true);
       setCreatedEmail(contact.officialEmail || "");
