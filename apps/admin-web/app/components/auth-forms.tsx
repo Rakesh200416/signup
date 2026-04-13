@@ -358,101 +358,98 @@ export function SignupWizard() {
     setStep((current) => current + 1);
   };
 
-  const submitSignup = async () => {
-    if (!captchaReady || captchaInput.trim() !== captchaAnswer) {
-      toast.error("Please solve the CAPTCHA before submitting.");
-      resetCaptcha();
-      return;
-    }
+const submitSignup = async () => {
+  if (!captchaReady || captchaInput.trim() !== captchaAnswer) {
+    toast.error("Please solve the CAPTCHA before submitting.");
+    resetCaptcha();
+    return;
+  }
 
-    const identity = payload.identity || {};
-    const contact = payload.contact || {};
-    const security = payload.security || {};
-    const advanced = payload.advanced || {};
+  const identity = payload.identity || {};
+  const contact = payload.contact || {};
+  const security = payload.security || {};
+  const advanced = payload.advanced || {};
 
-    const signupPayload = {
-      identity: {
-        fullName: identity.fullName,
-        dob: identity.dob,
-        govtIdType: identity.govtIdType,
-      },
-      contact: {
-        officialEmail: contact.officialEmail,
-        personalEmail: contact.personalEmail,
-        primaryPhone: contact.primaryPhone,
-        secondaryPhone: contact.secondaryPhone,
-      },
-      security: {
-        password: security.password,
-        confirmPassword: security.confirmPassword,
-        securityQuestions: [
-          { question: security.question1, answer: security.answer1 },
-          { question: security.question2, answer: security.answer2 },
-          { question: security.question3, answer: security.answer3 },
-        ],
-      },
-      advanced: {
-        totpEnabled: true,
-        backupCodes,
-        ipWhitelist: advanced.ipWhitelist ? advanced.ipWhitelist.split(",").map((ip: string) => ip.trim()).filter(Boolean) : [],
-      },
-    };
-
-    if (!acceptedTerms) {
-      toast.error("Accept the terms to create an account.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const response = await api.post(
-        "/auth/signup",
-        signupPayload,
-      );
-      setSignupComplete(true);
-      setCreatedEmail(contact.officialEmail || "");
-
-      if (govtIdFile) {
-        const idForm = new FormData();
-        idForm.append("email", contact.officialEmail);
-        idForm.append("govtIdType", identity.govtIdType);
-        idForm.append("govtIdFile", govtIdFile);
-        await api.post(
-          "/auth/upload-id",
-          idForm,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-              "X-CSRF-Token": csrfToken,
-            },
-          },
-        );
-      }
-
-      if (photoFile) {
-        const photoForm = new FormData();
-        photoForm.append("email", contact.officialEmail);
-        photoForm.append("profilePhotoFile", photoFile);
-        await api.post(
-          "/auth/upload-profile-photo",
-          photoForm,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-              "X-CSRF-Token": csrfToken,
-            },
-          },
-        );
-      }
-
-      toast.success("Account created. Check your inbox for the verification OTP email.");
-      setStep(5);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Signup failed.");
-    } finally {
-      setIsSubmitting(false);
-    }
+  const signupPayload = {
+    identity: {
+      fullName: identity.fullName,
+      dob: identity.dob,
+      govtIdType: identity.govtIdType,
+    },
+    contact: {
+      officialEmail: contact.officialEmail,
+      personalEmail: contact.personalEmail,
+      primaryPhone: contact.primaryPhone,
+      secondaryPhone: contact.secondaryPhone,
+    },
+    security: {
+      password: security.password,
+      confirmPassword: security.confirmPassword,
+      securityQuestions: [
+        { question: security.question1, answer: security.answer1 },
+        { question: security.question2, answer: security.answer2 },
+        { question: security.question3, answer: security.answer3 },
+      ],
+    },
+    advanced: {
+      totpEnabled: true,
+      backupCodes,
+      ipWhitelist: advanced.ipWhitelist
+        ? advanced.ipWhitelist.split(",").map((ip: string) => ip.trim()).filter(Boolean)
+        : [],
+    },
   };
+
+  if (!acceptedTerms) {
+    toast.error("Accept the terms to create an account.");
+    return;
+  }
+
+  try {
+    setIsSubmitting(true);
+
+    // ✅ NO CSRF HERE
+    const response = await api.post("/auth/signup", signupPayload);
+
+    setSignupComplete(true);
+    setCreatedEmail(contact.officialEmail || "");
+
+    // ✅ Upload Govt ID (NO CSRF)
+    if (govtIdFile) {
+      const idForm = new FormData();
+      idForm.append("email", contact.officialEmail);
+      idForm.append("govtIdType", identity.govtIdType);
+      idForm.append("govtIdFile", govtIdFile);
+
+      await api.post("/auth/upload-id", idForm, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+    }
+
+    // ✅ Upload Profile Photo (NO CSRF)
+    if (photoFile) {
+      const photoForm = new FormData();
+      photoForm.append("email", contact.officialEmail);
+      photoForm.append("profilePhotoFile", photoFile);
+
+      await api.post("/auth/upload-profile-photo", photoForm, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+    }
+
+    toast.success("Account created. Check your email for OTP.");
+    setStep(5);
+
+  } catch (error: any) {
+    toast.error(error?.response?.data?.message || "Signup failed.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <NeumorphicCard className="max-w-3xl w-full">
