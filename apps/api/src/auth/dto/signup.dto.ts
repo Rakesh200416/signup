@@ -5,8 +5,8 @@ export const signupSchema = z.object({
     fullName: z.string().min(3),
     dob: z.string().min(8),
     govtIdType: z.string().min(2),
-    govtIdUrl: z.string().url(),
-    profilePhotoUrl: z.string().url(),
+    govtIdUrl: z.string().url().optional(),
+    profilePhotoUrl: z.string().url().optional(),
   }),
   contact: z.object({
     officialEmail: z.string().email(),
@@ -18,7 +18,7 @@ export const signupSchema = z.object({
     .object({
       password: z
         .string()
-        .min(8)
+        .min(12)
         .regex(/(?=.*[a-z])/, "At least one lowercase character is required")
         .regex(/(?=.*[A-Z])/, "At least one uppercase character is required")
         .regex(/(?=.*\d)/, "At least one digit is required")
@@ -31,7 +31,7 @@ export const signupSchema = z.object({
             answer: z.string().min(3),
           }),
         )
-        .min(5),
+        .min(3),
     })
     .refine((data) => data.password === data.confirmPassword, {
       message: "Passwords must match",

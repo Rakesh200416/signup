@@ -6,8 +6,11 @@ import {
   Get,
   UsePipes,
   UnauthorizedException,
+  UploadedFile,
+  UseInterceptors,
 } from "@nestjs/common";
-import { Request } from "express";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Request, Express } from "express";
 import { AuthService } from "./auth.service";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { loginSchema, LoginDto } from "./dto/login.dto";
@@ -16,6 +19,9 @@ import { signupSchema, SignupDto } from "./dto/signup.dto";
 import { verifyOtpSchema, VerifyOtpDto } from "./dto/verify-otp.dto";
 import { setup2FASchema, Setup2FADto } from "./dto/setup-2fa.dto";
 import { recoverSchema, RecoverDto } from "./dto/recover.dto";
+import { refreshTokenSchema, RefreshTokenDto } from "./dto/refresh-token.dto";
+import { uploadIdSchema, UploadIdDto } from "./dto/upload-id.dto";
+import { uploadProfilePhotoSchema, UploadProfilePhotoDto } from "./dto/upload-profile-photo.dto";
 
 @Controller("auth")
 export class AuthController {
@@ -24,10 +30,7 @@ export class AuthController {
   @Get("csrf-token")
   getCsrfToken(@Req() req: Request) {
     const token = req.csrfToken?.();
-    if (!token) {
-      throw new UnauthorizedException("CSRF token generation failed");
-    }
-    return { csrfToken: token };
+    return { csrfToken: token || "" };
   }
 
   @Post("signup")
@@ -49,6 +52,12 @@ export class AuthController {
     return this.authService.requestOtp(requestOtpDto);
   }
 
+  @Post("refresh")
+  @UsePipes(new ZodValidationPipe(refreshTokenSchema))
+  async refreshToken(@Body() refreshTokenDto: RefreshTokenDto) {
+    return this.authService.refreshToken(refreshTokenDto);
+  }
+
   @Post("verify-otp")
   @UsePipes(new ZodValidationPipe(verifyOtpSchema))
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
@@ -59,6 +68,30 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(setup2FASchema))
   async setupTwoFactor(@Body() setupDto: Setup2FADto) {
     return this.authService.setupTwoFactor(setupDto);
+  }
+
+  @Post("upload-id")
+  @UseInterceptors(FileInterceptor("govtIdFile"))
+  async uploadGovtId(
+    @Body(new ZodValidationPipe(uploadIdSchema)) uploadIdDto: UploadIdDto,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new UnauthorizedException("Government ID file upload is required.");
+    }
+    return this.authService.uploadGovtId(uploadIdDto.email, uploadIdDto.govtIdType, file.buffer, file.originalname, file.mimetype);
+  }
+
+  @Post("upload-profile-photo")
+  @UseInterceptors(FileInterceptor("profilePhotoFile"))
+  async uploadProfilePhoto(
+    @Body(new ZodValidationPipe(uploadProfilePhotoSchema)) uploadPhotoDto: UploadProfilePhotoDto,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new UnauthorizedException("Profile photo file upload is required.");
+    }
+    return this.authService.uploadProfilePhoto(uploadPhotoDto.email, file.buffer, file.originalname, file.mimetype);
   }
 
   @Post("recover")

@@ -6,6 +6,9 @@ import { AuthModule } from "./auth/auth.module";
 import { UserModule } from "./user/user.module";
 import { OtpModule } from "./otp/otp.module";
 import { SecurityModule } from "./security/security.module";
+import { EmailModule } from "./email/email.module";
+import { SmsModule } from "./sms/sms.module";
+import { StorageModule } from "./storage/storage.module";
 
 @Module({
   imports: [
@@ -25,6 +28,9 @@ import { SecurityModule } from "./security/security.module";
     UserModule,
     OtpModule,
     SecurityModule,
+    EmailModule,
+    SmsModule,
+    StorageModule,
     AuthModule,
   ],
 })

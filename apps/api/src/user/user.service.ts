@@ -22,7 +22,7 @@ export class UserService {
     password: string;
     profile: {
       govtIdType: string;
-      govtIdUrl: string;
+      govtIdUrl?: string | null;
       phonePrimary: string;
       phoneSecondary?: string;
       backupEmail?: string;
@@ -30,7 +30,6 @@ export class UserService {
     };
     securityQuestions: Array<{ question: string; answerHash: string }>;
     backupCodes: string[];
-    otpCode: string;
   }) {
     return this.prisma.user.create({
       data: {
@@ -43,7 +42,7 @@ export class UserService {
         profile: {
           create: {
             govtIdType: data.profile.govtIdType,
-            govtIdUrl: data.profile.govtIdUrl,
+            govtIdUrl: data.profile.govtIdUrl ?? null,
             phonePrimary: data.profile.phonePrimary,
             phoneSecondary: data.profile.phoneSecondary ?? null,
             backupEmail: data.profile.backupEmail ?? null,
@@ -59,9 +58,10 @@ export class UserService {
         },
         verification: {
           create: {
-            emailOTP: data.otpCode,
-            phoneOTP: data.otpCode,
-            otpExpiry: new Date(Date.now() + 1000 * 60 * 10),
+            emailOTP: null,
+            phoneOTP: null,
+            otpExpiry: null,
+            failedAttempts: 0,
           },
         },
       },

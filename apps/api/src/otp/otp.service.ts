@@ -1,39 +1,52 @@
 import { Injectable, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { randomInt } from "crypto";
+import { hash, verify as argonVerify, argon2id } from "argon2";
+import { OtpDeliveryMethod } from "@prisma/client";
 
 @Injectable()
 export class OtpService {
   constructor(private readonly prisma: PrismaService) {}
 
   private generateNumericCode() {
-    return randomInt(100000, 999999).toString();
+    return randomInt(100000, 999999).toString().padStart(6, "0");
   }
 
-  generateOtpCode() {
-    return this.generateNumericCode();
+  private async hashCode(code: string) {
+    return hash(code, { type: argon2id });
   }
 
-  async createOtpForUser(userId: string) {
+  async createOtpForUser(userId: string, method: OtpDeliveryMethod, destination: string, expiresInMinutes = 10) {
     const code = this.generateNumericCode();
-    const expiry = new Date(Date.now() + 1000 * 60 * 10);
+    const codeHash = await this.hashCode(code);
+    const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
-    return this.prisma.verification.upsert({
+    await this.prisma.otpCode.create({
+      data: {
+        userId,
+        method,
+        destination,
+        codeHash,
+        expiresAt,
+      },
+    });
+
+    await this.prisma.verification.upsert({
       where: { userId },
+      create: {
+        userId,
+        emailOTP: null,
+        phoneOTP: null,
+        otpExpiry: null,
+        failedAttempts: 0,
+      },
       update: {
-        emailOTP: code,
-        phoneOTP: code,
-        otpExpiry: expiry,
         failedAttempts: 0,
         lockedUntil: null,
       },
-      create: {
-        userId,
-        emailOTP: code,
-        phoneOTP: code,
-        otpExpiry: expiry,
-      },
     });
+
+    return { code, expiresAt };
   }
 
   async validateOtp(userId: string, code: string) {
@@ -46,19 +59,34 @@ export class OtpService {
       throw new ForbiddenException("OTP flow locked due to repeated failures.");
     }
 
-    if (verification.otpExpiry < new Date()) {
-      throw new BadRequestException("OTP expired. Request a new verification code.");
+    const otpRecord = await this.prisma.otpCode.findFirst({
+      where: {
+        userId,
+        isConsumed: false,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!otpRecord) {
+      throw new BadRequestException("OTP expired or invalid. Request a new verification code.");
     }
 
-    if (verification.emailOTP !== code && verification.phoneOTP !== code) {
+    if (!(await argonVerify(otpRecord.codeHash, code))) {
       await this.incrementFailedAttempt(userId);
       throw new BadRequestException("OTP did not match.");
     }
 
-    await this.prisma.verification.update({
-      where: { userId },
-      data: { failedAttempts: 0, lockedUntil: null },
-    });
+    await this.prisma.$transaction([
+      this.prisma.otpCode.update({
+        where: { id: otpRecord.id },
+        data: { isConsumed: true },
+      }),
+      this.prisma.verification.update({
+        where: { userId },
+        data: { failedAttempts: 0, lockedUntil: null },
+      }),
+    ]);
 
     return true;
   }

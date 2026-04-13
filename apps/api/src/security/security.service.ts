@@ -1,6 +1,7 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { generateSecret, generateURI, verify as totpVerify } from "otplib";
+import qrcode from "qrcode";
+import speakeasy from "speakeasy";
 import { hash, verify as argonVerify } from "argon2";
 
 @Injectable()
@@ -14,34 +15,43 @@ export class SecurityService {
   }
 
   async initializeTwoFactor(userId: string, email: string) {
-    const secret = generateSecret();
-    const otpauthUrl = generateURI({ issuer: "LMS SuperAdmin", label: email, secret });
+    const secret = speakeasy.generateSecret({
+      name: `LMS SuperAdmin (${email})`,
+      length: 20,
+    });
+
+    const otpauthUrl = secret.otpauth_url as string;
+    const qrCodeDataUrl = await qrcode.toDataURL(otpauthUrl);
     const backupCodes = this.buildBackupCodes();
     const hashedBackupCodes = await Promise.all(backupCodes.map((code) => hash(code)));
 
     await this.prisma.security.upsert({
       where: { userId },
       update: {
-        totpSecret: secret,
+        totpSecret: secret.base32,
         backupCodes: hashedBackupCodes,
       },
       create: {
         userId,
         securityQuestions: [],
-        totpSecret: secret,
+        totpSecret: secret.base32,
         backupCodes: hashedBackupCodes,
       },
     });
 
-    return { otpauthUrl, backupCodes };
+    return { otpauthUrl, qrCodeDataUrl, backupCodes };
   }
 
   async verifyTotp(secret: string | undefined, code?: string) {
     if (!secret || !code) {
       return false;
     }
-    const result = await totpVerify({ secret, token: code });
-    return result.valid;
+    return speakeasy.totp.verify({
+      secret,
+      encoding: "base32",
+      token: code,
+      window: 1,
+    });
   }
 
   async verifyBackupCode(userId: string, backupCode: string) {

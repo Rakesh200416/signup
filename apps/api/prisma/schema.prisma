@@ -13,57 +13,146 @@ enum Role {
 }
 
 model User {
-  id                String              @id @default(uuid())
-  name              String
-  email             String              @unique
-  password          String
-  role              Role                @default(SUPER_ADMIN)
-  isVerified        Boolean             @default(false)
-  isApproved        Boolean             @default(false)
-  createdAt         DateTime            @default(now())
-  profile           SuperAdminProfile?
-  security          Security?
-  verification      Verification?
-  refreshTokens     RefreshToken[]
+  id            String             @id @default(uuid())
+  name          String
+  email         String             @unique
+  password      String
+  role          Role               @default(SUPER_ADMIN)
+  isVerified    Boolean            @default(false)
+  isApproved    Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  profile       SuperAdminProfile?
+  security      Security?
+  verification  Verification?
+  refreshTokens RefreshToken[]
+  loginAttempts LoginAttempt[]
+  otpLogs       OtpLog[]
+  otpCodes      OtpCode[]
+  recoveryCodes RecoveryCode[]
+  magicLinks    MagicLink[]
+  govtIdStorage GovtIdStorage?
 }
 
 model SuperAdminProfile {
-  id              String   @id @default(uuid())
-  user            User     @relation(fields: [userId], references: [id])
-  userId          String   @unique
-  govtIdType      String
-  govtIdUrl       String
-  phonePrimary    String
-  phoneSecondary  String?
-  backupEmail     String?
-  ipWhitelist     Json?
+  id             String  @id @default(uuid())
+  user           User    @relation(fields: [userId], references: [id])
+  userId         String  @unique
+  govtIdType     String
+  govtIdUrl      String?
+  profilePhotoUrl String?
+  phonePrimary   String
+  phoneSecondary String?
+  backupEmail    String?
+  ipWhitelist    Json?
 }
 
 model Security {
-  id                String   @id @default(uuid())
-  user              User     @relation(fields: [userId], references: [id])
-  userId            String   @unique
+  id                String  @id @default(uuid())
+  user              User    @relation(fields: [userId], references: [id])
+  userId            String  @unique
   securityQuestions Json
   totpSecret        String?
   backupCodes       Json
 }
 
 model Verification {
-  id              String   @id @default(uuid())
-  user            User     @relation(fields: [userId], references: [id])
-  userId          String   @unique
-  emailOTP        String
-  phoneOTP        String
-  otpExpiry       DateTime
-  failedAttempts  Int      @default(0)
-  lockedUntil     DateTime?
+  id             String    @id @default(uuid())
+  user           User      @relation(fields: [userId], references: [id])
+  userId         String    @unique
+  emailOTP       String?
+  phoneOTP       String?
+  otpExpiry      DateTime?
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
 }
 
 model RefreshToken {
-  id         String   @id @default(uuid())
-  user       User     @relation(fields: [userId], references: [id])
-  userId     String
-  token      String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  token     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model LoginAttempt {
+  id            String   @id @default(uuid())
+  user          User?    @relation(fields: [userId], references: [id])
+  userId        String?
+  email         String?
+  success       Boolean  @default(false)
+  failureReason String?
+  ip            String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+}
+
+model OtpLog {
+  id          String            @id @default(uuid())
+  user        User              @relation(fields: [userId], references: [id])
+  userId      String
+  method      OtpDeliveryMethod
+  destination String
+  codeHash    String
+  isConsumed  Boolean           @default(false)
+  expiresAt   DateTime
+  success     Boolean?
+  ip          String?
+  createdAt   DateTime          @default(now())
+}
+
+model OtpCode {
+  id            String            @id @default(uuid())
+  user          User              @relation(fields: [userId], references: [id])
+  userId        String
+  method        OtpDeliveryMethod
+  destination   String
+  codeHash      String
+  isConsumed    Boolean           @default(false)
+  expiresAt     DateTime
+  createdAt     DateTime          @default(now())
+
+  @@map("otp_codes")
+}
+
+enum OtpDeliveryMethod {
+  EMAIL
+  PHONE
+  MAGIC_LINK
+}
+
+model RecoveryCode {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  codeHash    String
+  isUsed      Boolean  @default(false)
+  generatedAt DateTime @default(now())
+}
+
+model MagicLink {
+  id        String           @id @default(uuid())
+  user      User             @relation(fields: [userId], references: [id])
+  userId    String
+  token     String           @unique
+  purpose   MagicLinkPurpose
+  expiresAt DateTime
+  used      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}
+
+enum MagicLinkPurpose {
+  SIGNIN
+  RECOVERY
+}
+
+model GovtIdStorage {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String   @unique
+  type        String
+  fileUrl     String
+  fingerprint String?
+  verified    Boolean  @default(false)
+  uploadedAt  DateTime @default(now())
 }

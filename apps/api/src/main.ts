@@ -8,10 +8,10 @@ import * as csurf from "csurf";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const isProduction = process.env.NODE_ENV === "production";
 
   app.use(helmet());
   app.use(cookieParser());
-  app.use(csurf({ cookie: { httpOnly: true, sameSite: "lax", secure: false } }));
   app.enableCors({
     origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
     credentials: true,
@@ -19,6 +19,16 @@ async function bootstrap() {
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin", "X-CSRF-Token"],
     exposedHeaders: ["set-cookie"],
   });
+
+  if (isProduction) {
+    const csrfProtection = csurf({ cookie: { httpOnly: true, sameSite: "none", secure: true, path: "/" } });
+    app.use((req, res, next) => {
+      if (req.method === "OPTIONS") {
+        return next();
+      }
+      return csrfProtection(req, res, next);
+    });
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({
