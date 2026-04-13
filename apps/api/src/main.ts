@@ -21,15 +21,15 @@ async function bootstrap() {
     exposedHeaders: ["set-cookie"],
   });
 
-  if (isProduction) {
-    const csrfProtection = csurf({ cookie: { httpOnly: true, sameSite: "none", secure: true, path: "/" } });
-    app.use((req, res, next) => {
-      if (req.method === "OPTIONS") {
-        return next();
-      }
-      return csrfProtection(req, res, next);
-    });
-  }
+  // if (isProduction) {
+  //   const csrfProtection = csurf({ cookie: { httpOnly: true, sameSite: "none", secure: true, path: "/" } });
+  //   app.use((req, res, next) => {
+  //     if (req.method === "OPTIONS") {
+  //       return next();
+  //     }
+  //     return csrfProtection(req, res, next);
+  //   });
+  // }
 
   app.useGlobalPipes(
     new ValidationPipe({
