@@ -25,7 +25,7 @@ export function StepProgress({
             >
               {index + 1}
             </span>
-            <span className={`text-sm ${isActive ? "font-semibold text-[#111827]" : "text-[#6b7280]"}`}>
+            <span className={`text-sm ${isActive ? "font-semibold text-[#111827] dark:text-[#f8fafc]" : "text-[#6b7280] dark:text-[#cbd5e1]"}`}>
               {step}
             </span>
           </div>

@@ -49,8 +49,9 @@ export class OtpService {
     return { code, expiresAt };
   }
 
-  async validateOtp(userId: string, code: string) {
+  async validateOtp(userId: string, code: string, consume = true) {
     const verification = await this.prisma.verification.findUnique({ where: { userId } });
+    const normalizedCode = code?.trim();
     if (!verification) {
       throw new BadRequestException("OTP record not found.");
     }
@@ -72,21 +73,28 @@ export class OtpService {
       throw new BadRequestException("OTP expired or invalid. Request a new verification code.");
     }
 
-    if (!(await argonVerify(otpRecord.codeHash, code))) {
+    if (!normalizedCode || !(await argonVerify(otpRecord.codeHash, normalizedCode))) {
       await this.incrementFailedAttempt(userId);
       throw new BadRequestException("OTP did not match.");
     }
 
-    await this.prisma.$transaction([
-      this.prisma.otpCode.update({
-        where: { id: otpRecord.id },
-        data: { isConsumed: true },
-      }),
-      this.prisma.verification.update({
+    if (consume) {
+      await this.prisma.$transaction([
+        this.prisma.otpCode.update({
+          where: { id: otpRecord.id },
+          data: { isConsumed: true },
+        }),
+        this.prisma.verification.update({
+          where: { userId },
+          data: { failedAttempts: 0, lockedUntil: null },
+        }),
+      ]);
+    } else {
+      await this.prisma.verification.update({
         where: { userId },
         data: { failedAttempts: 0, lockedUntil: null },
-      }),
-    ]);
+      });
+    }
 
     return true;
   }

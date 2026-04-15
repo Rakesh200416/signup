@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import qrcode from "qrcode";
-import speakeasy from "speakeasy";
+import { toDataURL } from "qrcode";
+import * as speakeasy from "speakeasy";
 import { hash, verify as argonVerify } from "argon2";
 
 @Injectable()
@@ -21,7 +21,7 @@ export class SecurityService {
     });
 
     const otpauthUrl = secret.otpauth_url as string;
-    const qrCodeDataUrl = await qrcode.toDataURL(otpauthUrl);
+    const qrCodeDataUrl = await toDataURL(otpauthUrl);
     const backupCodes = this.buildBackupCodes();
     const hashedBackupCodes = await Promise.all(backupCodes.map((code) => hash(code)));
 

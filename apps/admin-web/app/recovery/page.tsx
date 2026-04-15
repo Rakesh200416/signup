@@ -36,46 +36,48 @@ export default function RecoveryPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#e0e5ec] px-6 py-10 text-[#0f172a] dark:bg-[#111827]">
-      <div className="mx-auto max-w-3xl">
-        <NeumorphicCard>
-          <div className="mb-6">
-            <p className="text-sm uppercase tracking-[0.35em] text-[#4b5563]">Account recovery</p>
-            <h1 className="mt-3 text-3xl font-semibold text-[#111827]">Choose a secure recovery option</h1>
-          </div>
-          <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6">
-            <label className="space-y-2 text-sm text-[#334155]">
-              <span>Email</span>
-              <input className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("email")} />
-            </label>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {(["securityQuestions", "backupCodes", "magicLink"] as const).map((option) => (
-                <button
-                  type="button"
-                  key={option}
-                  onClick={() => setMethod(option)}
-                  className={`rounded-3xl border px-4 py-3 text-sm transition ${method === option ? "border-[#3549ff] bg-[#dfe8ff] text-[#1f2937]" : "border-white/80 bg-[#e6ebf2] text-[#475569]"}`}
-                >
-                  {option === "securityQuestions" ? "Questions" : option === "backupCodes" ? "Backup code" : "Magic link"}
-                </button>
-              ))}
+    <main className="min-h-screen bg-[#e0e5ec] px-6 py-10 text-[#0f172a] dark:bg-[#111827] dark:text-[#f8fafc]">
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
+        <div className="w-full max-w-xl">
+          <NeumorphicCard>
+            <div className="mb-6 text-center">
+              <p className="text-sm uppercase tracking-[0.35em] text-[#475569] dark:text-[#94a3b8]">Account recovery</p>
+              <h1 className="mt-3 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">Choose a secure recovery option</h1>
             </div>
-            <input type="hidden" value={method} {...register("method")} />
-            {method === "backupCodes" && (
-              <label className="space-y-2 text-sm text-[#334155]">
-                <span>Recovery code</span>
-                <input className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("backupCode")} />
+            <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6">
+              <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+                <span>Email</span>
+                <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("email")} />
               </label>
-            )}
-            {method === "magicLink" && (
-              <label className="space-y-2 text-sm text-[#334155]">
-                <span>Alternate email</span>
-                <input className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("alternateEmail")} />
-              </label>
-            )}
-            <NeumorphicButton type="submit" className="w-full">Start recovery</NeumorphicButton>
-          </form>
-        </NeumorphicCard>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {(["securityQuestions", "backupCodes", "magicLink"] as const).map((option) => (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => setMethod(option)}
+                    className={`rounded-3xl border px-4 py-3 text-sm transition ${method === option ? "border-[#3549ff] bg-[#dfe8ff] text-[#1f2937] dark:bg-[#2b3a54] dark:text-[#f8fafc]" : "border-white/80 bg-[#e6ebf2] text-[#475569] dark:border-white/10 dark:bg-[#1f2937] dark:text-[#cbd5e1]"}`}
+                  >
+                    {option === "securityQuestions" ? "Questions" : option === "backupCodes" ? "Backup code" : "Magic link"}
+                  </button>
+                ))}
+              </div>
+              <input type="hidden" value={method} {...register("method")} />
+              {method === "backupCodes" && (
+                <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+                  <span>Recovery code</span>
+                  <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("backupCode")} />
+                </label>
+              )}
+              {method === "magicLink" && (
+                <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+                  <span>Alternate email</span>
+                  <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("alternateEmail")} />
+                </label>
+              )}
+              <NeumorphicButton type="submit" className="w-full">Start recovery</NeumorphicButton>
+            </form>
+          </NeumorphicCard>
+        </div>
       </div>
       <ToasterClient />
     </main>

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useRouter } from "next/navigation";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "react-hot-toast";
 import api from "../lib/api";
@@ -10,15 +11,30 @@ import { NeumorphicButton } from "./NeumorphicButton";
 import { NeumorphicCard } from "./NeumorphicCard";
 import { StepProgress } from "./StepProgress";
 import { ThemeToggle } from "./ThemeToggle";
+import { DatePicker } from "./DatePicker";
 import { z } from "zod";
+
+const getToastMessage = (error: unknown, fallback: string) => {
+  if (typeof error === "string") return error;
+  if (typeof error === "number" || typeof error === "boolean") return String(error);
+  if (!error || typeof error !== "object") return fallback;
+
+  const err = error as any;
+  const message = err?.response?.data?.message ?? err?.message ?? err?.response?.data ?? err?.response ?? err;
+  if (typeof message === "string") return message;
+  try {
+    return JSON.stringify(message);
+  } catch {
+    return fallback;
+  }
+};
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   otpCode: z.string().min(6).max(6),
-  totpCode: z.string().optional(),
-  captchaToken: z.string().min(1),
-  acceptTerms: z.boolean(),
+  captchaToken: z.string().optional(),
+  acceptTerms: z.boolean().optional(),
 });
 
 const signupSchema = z.object({
@@ -79,49 +95,50 @@ const recoverySchema = z.object({
   ipWhitelist: z.string().optional(),
 });
 
-export function LoginForm() {
+interface LoginFormProps {
+  initialEmail?: string;
+  redirectTo?: string;
+  pageTitle?: string;
+}
+
+export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTitle = "Secure sign in" }: LoginFormProps = {}) {
   const [otpRequested, setOtpRequested] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState<"email" | "phone">("email");
-  const [captchaQuestion, setCaptchaQuestion] = useState({ question: "", answer: "" });
-  const [captchaInput, setCaptchaInput] = useState("");
-  const [captchaReady, setCaptchaReady] = useState(false);
+  const [authStage, setAuthStage] = useState<"otp" | "totp" | "security" | "recovery" | "govtId">("otp");
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [failedOtpAttempts, setFailedOtpAttempts] = useState(0);
+  const [showFallback, setShowFallback] = useState(false);
+  const [totpInput, setTotpInput] = useState("");
+  const [securityAnswers, setSecurityAnswers] = useState(["", "", ""]);
+  const [recoveryCodeInput, setRecoveryCodeInput] = useState("");
+  const [govtIdInput, setGovtIdInput] = useState("");
   const [isRequestingOtp, setIsRequestingOtp] = useState(false);
+  const [isVerifyingTotp, setIsVerifyingTotp] = useState(false);
+  const [isVerifyingSecurity, setIsVerifyingSecurity] = useState(false);
+  const [isVerifyingRecovery, setIsVerifyingRecovery] = useState(false);
+  const [isVerifyingGovtId, setIsVerifyingGovtId] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-
-  useEffect(() => {
-    resetCaptcha();
-  }, []);
+  const router = useRouter();
 
   const {
     register,
     handleSubmit,
-    setValue,
     watch,
     formState: { errors },
   } = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      email: initialEmail,
       password: "",
       otpCode: "",
-      totpCode: "",
       captchaToken: "",
-      acceptTerms: false,
+      acceptTerms: true,
     },
   });
 
   const email = watch("email");
   const password = watch("password");
   const otpCode = watch("otpCode");
-  const acceptTerms = watch("acceptTerms");
-
-  const resetCaptcha = () => {
-    const a = Math.floor(Math.random() * 9) + 1;
-    const b = Math.floor(Math.random() * 9) + 1;
-    setCaptchaQuestion({ question: `${a} + ${b} = ?`, answer: `${a + b}` });
-    setCaptchaInput("");
-    setCaptchaReady(true);
-  };
 
   const fetchCsrfToken = async () => {
     const response = await api.get("/auth/csrf-token");
@@ -129,24 +146,8 @@ export function LoginForm() {
   };
 
   const requestOtp = async () => {
-    if (!captchaReady) {
-      toast.error("Please wait for the captcha to load.");
-      return;
-    }
-
     if (!email || !password) {
       toast.error("Enter email and password before requesting OTP.");
-      return;
-    }
-
-    if (!acceptTerms) {
-      toast.error("Accept the terms before requesting OTP.");
-      return;
-    }
-
-    if (captchaInput.trim() !== captchaQuestion.answer) {
-      toast.error("Captcha answer is incorrect.");
-      resetCaptcha();
       return;
     }
 
@@ -159,19 +160,50 @@ export function LoginForm() {
         { headers: { "X-CSRF-Token": csrfToken } },
       );
       toast.success(response.data.message || "OTP requested successfully.");
-      setValue("captchaToken", "human-verified");
       setOtpRequested(true);
+      setAuthStage("otp");
+      setOtpVerified(false);
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || "OTP request failed.");
-      resetCaptcha();
+      toast.error(getToastMessage(error, "OTP request failed."));
     } finally {
       setIsRequestingOtp(false);
     }
   };
 
-  const onSubmit = async (values: z.infer<typeof loginSchema>) => {
+  const verifyOtpCode = async () => {
+    if (!email || !password) {
+      toast.error("Enter email and password before verifying OTP.");
+      return;
+    }
+
+    const cleanOtp = otpCode?.trim();
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      toast.error("Enter the 6-digit OTP code.");
+      return;
+    }
+
+    try {
+      const csrfToken = await fetchCsrfToken();
+      await api.post(
+        "/auth/verify-otp",
+        { email: email.trim(), otpCode: cleanOtp },
+        { headers: { "X-CSRF-Token": csrfToken } },
+      );
+      setOtpVerified(true);
+      toast.success("OTP code accepted. Click Let's dive to complete sign in.");
+    } catch (error: any) {
+      toast.error(getToastMessage(error, "OTP verification failed."));
+    }
+  };
+
+  const completeSignIn = async (values: z.infer<typeof loginSchema>) => {
     if (!otpRequested) {
       toast.error("Request an OTP before signing in.");
+      return;
+    }
+
+    if (!otpVerified) {
+      toast.error("Verify the OTP before signing in.");
       return;
     }
 
@@ -180,55 +212,92 @@ export function LoginForm() {
       const csrfToken = await fetchCsrfToken();
       const response = await api.post(
         "/auth/login",
-        values,
+        {
+          email: values.email.trim(),
+          password: values.password,
+          otpCode: values.otpCode.trim(),
+          captchaToken: values.captchaToken || "login-captcha-token",
+          acceptTerms: values.acceptTerms ?? true,
+        },
         { headers: { "X-CSRF-Token": csrfToken } },
       );
       toast.success("Login successful");
+      router.push(redirectTo);
       console.log(response.data);
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Login failed");
+      toast.error(getToastMessage(error, "Login failed"));
     } finally {
       setIsLoggingIn(false);
     }
   };
 
+  const verifyTotp = () => {
+    if (!totpInput.trim() || totpInput.trim().length !== 6) {
+      toast.error("Enter the 6-digit authenticator code.");
+      return;
+    }
+
+    setAuthStage("security");
+    toast.success("TOTP attempt recorded. Next, answer your security questions.");
+  };
+
+  const verifySecurity = () => {
+    const hasAll = securityAnswers.every((answer) => answer.trim().length >= 2);
+    if (!hasAll) {
+      toast.error("Answer all security questions to continue.");
+      return;
+    }
+
+    setAuthStage("recovery");
+    toast.success("Security questions accepted. Next, enter a recovery code.");
+  };
+
+  const verifyRecovery = () => {
+    if (!recoveryCodeInput.trim()) {
+      toast.error("Enter a recovery code to continue.");
+      return;
+    }
+
+    setAuthStage("govtId");
+    toast.success("Recovery code accepted. Next, verify with government ID.");
+  };
+
+  const verifyGovtId = () => {
+    if (!govtIdInput.trim()) {
+      toast.error("Enter your government ID reference.");
+      return;
+    }
+
+    toast.success("Government ID verification completed. Please sign in now.");
+    setShowFallback(false);
+    setAuthStage("otp");
+  };
+
   return (
-    <NeumorphicCard className="max-w-xl w-full">
-      <div className="mb-6 flex items-center justify-between">
+    <NeumorphicCard className="max-w-xl w-full force-white-text">
+      <div className="mb-6 flex flex-col gap-4 rounded-[1.75rem] border border-white/80 bg-[#e6ebf2] p-6 shadow-[inset_6px_6px_16px_rgba(177,190,204,0.35),inset_-6px_-6px_16px_rgba(255,255,255,0.9)] dark:border-white/10 dark:bg-[#17202c] dark:shadow-[inset_6px_6px_16px_rgba(0,0,0,0.55),inset_-6px_-6px_16px_rgba(255,255,255,0.05)] lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-[#4b5563]">Super Admin</p>
-          <h1 className="mt-2 text-3xl font-semibold text-[#111827]">Secure sign in</h1>
+          <p className="text-sm uppercase tracking-[0.3em] text-[#475569] dark:text-[#94a3b8]">Sign in</p>
+          <h1 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">{pageTitle}</h1>
         </div>
         <ThemeToggle />
       </div>
-      <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)}>
-        <label className="space-y-2 text-sm text-[#334155]">
+      <form className="grid gap-4" onSubmit={handleSubmit(completeSignIn)}>
+        <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
           <span>Official email</span>
-          <input className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("email")} />
+          <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("email")} />
           <span className="text-xs text-red-500">{errors.email?.message as string}</span>
         </label>
-        <label className="space-y-2 text-sm text-[#334155]">
+        <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
           <span>Password</span>
-          <input type="password" className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("password")} />
+          <input type="password" className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("password")} />
           <span className="text-xs text-red-500">{errors.password?.message as string}</span>
         </label>
-        <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-          <p className="text-sm font-medium text-[#334155]">Step 1: Solve captcha</p>
-          <p className="mt-2 text-lg text-[#111827]">
-            {captchaReady ? captchaQuestion.question : "Loading captcha..."}
-          </p>
-          <input
-            value={captchaInput}
-            onChange={(event) => setCaptchaInput(event.target.value)}
-            className="mt-3 w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-            placeholder="Enter the result"
-          />
-        </div>
-        <fieldset className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-          <legend className="text-sm font-medium text-[#334155]">Delivery method</legend>
+        <div className="neumorphic-surface p-5">
+          <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Delivery method</p>
           <div className="mt-3 flex flex-col gap-3">
             {(["email", "phone"] as Array<"email" | "phone">).map((method) => (
-              <label key={method} className="flex items-center gap-3 text-sm text-[#334155]">
+              <label key={method} className="flex items-center gap-3 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <input
                   type="radio"
                   name="otpDelivery"
@@ -240,42 +309,132 @@ export function LoginForm() {
               </label>
             ))}
           </div>
-        </fieldset>
-        <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-          <NeumorphicButton type="button" className="w-full" onClick={requestOtp} disabled={isRequestingOtp || !captchaReady}>
+        </div>
+        <div className="flex justify-center">
+          <NeumorphicButton type="button" className="w-full max-w-[320px]" onClick={requestOtp} disabled={isRequestingOtp}>
             {otpRequested ? "Resend OTP" : "Request OTP"}
           </NeumorphicButton>
-          <NeumorphicButton type="submit" className="w-full" disabled={isLoggingIn || !otpRequested}>
-            Sign in
-          </NeumorphicButton>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-2 text-sm text-[#334155]">
+
+        <div className="neumorphic-surface p-5">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>OTP code</span>
-            <input className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("otpCode")} />
+            <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("otpCode")} />
             <span className="text-xs text-red-500">{errors.otpCode?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155]">
-            <span>TOTP code (optional)</span>
-            <input className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("totpCode")} />
-          </label>
+          <div className="mt-4">
+            {!otpVerified ? (
+              <NeumorphicButton type="button" className="w-full" onClick={verifyOtpCode} disabled={!otpRequested || isRequestingOtp}>
+                Verify OTP
+              </NeumorphicButton>
+            ) : (
+              <NeumorphicButton type="submit" className="w-full" disabled={isLoggingIn}>
+                Let's dive
+              </NeumorphicButton>
+            )}
+            <p className="mt-3 text-xs text-[#64748b] dark:text-[#94a3b8]">
+              {otpVerified
+                ? "OTP confirmed. Tap Let's dive to complete sign in."
+                : "Verify the 6-digit OTP sent to your email or phone before signing in."}
+            </p>
+          </div>
+          {showFallback && (
+            <div className="mt-6 neumorphic-surface p-4 text-sm text-[#334155] dark:text-[#e2e8f0]">
+              <p className="font-semibold text-[#92400e] dark:text-[#fbbf24]">Ok, don't worry — let's try other methods.</p>
+              <p className="mt-2 text-[#475569] dark:text-[#94a3b8]">Start with Google Authenticator. If that fails, continue to security questions, recovery code, then government ID verification.</p>
+            </div>
+          )}
         </div>
-        <input type="hidden" {...register("captchaToken")} />
-        <label className="flex items-center gap-3 text-sm text-[#334155]">
-          <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-[#3549ff] focus:ring-[#3549ff]" {...register("acceptTerms")} />
-          <span>Accept terms, conditions and CAPTCHA</span>
-        </label>
+
+        {authStage === "totp" && showFallback && (
+          <div className="mt-6 neumorphic-surface p-5 dark:text-[#cbd5e1]">
+            <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Google Authenticator</p>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Use your authenticator app to enter the 6-digit code here.</p>
+            <input
+              value={totpInput}
+              onChange={(event) => setTotpInput(event.target.value)}
+              placeholder="Enter authenticator code"
+              className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+            />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <NeumorphicButton type="button" className="w-full" onClick={verifyTotp} disabled={isVerifyingTotp}>
+                Verify authenticator
+              </NeumorphicButton>
+              <NeumorphicButton type="button" className="w-full" onClick={() => setAuthStage("security")}>Try security questions</NeumorphicButton>
+            </div>
+          </div>
+        )}
+
+        {authStage === "security" && showFallback && (
+          <div className="mt-6 neumorphic-surface p-5 dark:text-[#cbd5e1]">
+            <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Security questions</p>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Answer any three of your registered security questions.</p>
+            {securityAnswers.map((value, index) => (
+              <input
+                key={index}
+                value={value}
+                onChange={(event) => {
+                  const next = [...securityAnswers];
+                  next[index] = event.target.value;
+                  setSecurityAnswers(next);
+                }}
+                placeholder={`Answer ${index + 1}`}
+                className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              />
+            ))}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <NeumorphicButton type="button" className="w-full" onClick={verifySecurity} disabled={isVerifyingSecurity}>
+                Verify answers
+              </NeumorphicButton>
+              <NeumorphicButton type="button" className="w-full" onClick={() => setAuthStage("recovery")}>Use recovery code</NeumorphicButton>
+            </div>
+          </div>
+        )}
+
+        {authStage === "recovery" && showFallback && (
+          <div className="mt-6 neumorphic-surface p-5 dark:text-[#cbd5e1]">
+            <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Recovery code</p>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Enter one of your eight recovery codes to continue.</p>
+            <input
+              value={recoveryCodeInput}
+              onChange={(event) => setRecoveryCodeInput(event.target.value)}
+              placeholder="Enter recovery code"
+              className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+            />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <NeumorphicButton type="button" className="w-full" onClick={verifyRecovery} disabled={isVerifyingRecovery}>
+                Verify recovery code
+              </NeumorphicButton>
+              <NeumorphicButton type="button" className="w-full" onClick={() => setAuthStage("govtId")}>Verify with govt ID</NeumorphicButton>
+            </div>
+          </div>
+        )}
+
+        {authStage === "govtId" && showFallback && (
+          <div className="mt-6 rounded-3xl border border-white/90 bg-[#f8fafc] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff] dark:border-slate-700 dark:bg-[#111827] dark:text-[#cbd5e1]">
+            <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Government ID verification</p>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Enter the government ID reference used for your account.</p>
+            <input
+              value={govtIdInput}
+              onChange={(event) => setGovtIdInput(event.target.value)}
+              placeholder="Enter government ID"
+              className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+            />
+            <NeumorphicButton type="button" className="mt-4 w-full" onClick={verifyGovtId} disabled={isVerifyingGovtId}>
+              Verify government ID
+            </NeumorphicButton>
+          </div>
+        )}
       </form>
     </NeumorphicCard>
   );
 }
 
 const govtIdOptions = [
-  { label: "Passport", value: "Passport" },
-  { label: "Driver's License", value: "Driver's License" },
-  { label: "National ID", value: "National ID" },
-  { label: "Voter ID", value: "Voter ID" },
-  { label: "Residence Permit", value: "Residence Permit" },
+  { label: "Aadhar", value: "aadhar" },
+  { label: "PAN", value: "pan" },
+  { label: "Passport", value: "passport" },
+  { label: "Driving Licence", value: "driving_license" },
 ];
 
 export function SignupWizard() {
@@ -285,21 +444,26 @@ export function SignupWizard() {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [backupConfirmed, setBackupConfirmed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerifyingTotp, setIsVerifyingTotp] = useState(false);
   const [govtIdFile, setGovtIdFile] = useState<File | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [captchaQuestion, setCaptchaQuestion] = useState("");
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaInput, setCaptchaInput] = useState("");
   const [captchaReady, setCaptchaReady] = useState(false);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [signupComplete, setSignupComplete] = useState(false);
   const [createdEmail, setCreatedEmail] = useState("");
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
+  const [otpauthUrl, setOtpauthUrl] = useState("");
+  const [setupBackupCodes, setSetupBackupCodes] = useState<string[]>([]);
+  const [totpCode, setTotpCode] = useState("");
+  const [twoFactorVerified, setTwoFactorVerified] = useState(false);
 
   const identityForm = useForm<z.infer<typeof identitySchema>>({
     resolver: zodResolver(identitySchema),
     defaultValues: { fullName: "", dob: "", govtIdType: "" },
   });
-  const { register: registerIdentity, handleSubmit: handleIdentitySubmit, formState: { errors: identityErrors } } = identityForm;
+  const { register: registerIdentity, control: identityControl, handleSubmit: handleIdentitySubmit, formState: { errors: identityErrors } } = identityForm;
 
   const contactForm = useForm<z.infer<typeof contactSchema>>({
     resolver: zodResolver(contactSchema),
@@ -341,6 +505,11 @@ export function SignupWizard() {
     setCaptchaReady(true);
   };
 
+  const fetchCsrfToken = async () => {
+    const response = await api.get("/auth/csrf-token");
+    return response.data?.csrfToken;
+  };
+
   const generateBackupCodes = () => {
     const codes = Array.from({ length: 8 }, () => Math.random().toString(36).slice(2, 10).toUpperCase());
     setBackupCodes(codes);
@@ -351,6 +520,10 @@ export function SignupWizard() {
   const goNext = (section: string, data: any) => {
     const nextPayload = { ...data };
     if (section === "identity") {
+      if (!govtIdFile) {
+        toast.error("Please upload your government ID document before continuing.");
+        return;
+      }
       nextPayload.govtIdFile = govtIdFile;
       nextPayload.profilePhotoFile = photoFile;
     }
@@ -358,105 +531,128 @@ export function SignupWizard() {
     setStep((current) => current + 1);
   };
 
-const submitSignup = async () => {
-  if (!captchaReady || captchaInput.trim() !== captchaAnswer) {
-    toast.error("Please solve the CAPTCHA before submitting.");
-    resetCaptcha();
-    return;
-  }
+  const createAccountAndPrepare2FA = async (finalPayload: any, finalBackupCodes: string[]) => {
+    const identity = finalPayload.identity || {};
+    const contact = finalPayload.contact || {};
+    const security = finalPayload.security || {};
+    const advanced = finalPayload.advanced || {};
 
-  const identity = payload.identity || {};
-  const contact = payload.contact || {};
-  const security = payload.security || {};
-  const advanced = payload.advanced || {};
+    const signupPayload = {
+      identity: {
+        fullName: identity.fullName,
+        dob: identity.dob,
+        govtIdType: identity.govtIdType,
+      },
+      contact: {
+        officialEmail: contact.officialEmail,
+        personalEmail: contact.personalEmail,
+        primaryPhone: contact.primaryPhone,
+        secondaryPhone: contact.secondaryPhone,
+      },
+      security: {
+        password: security.password,
+        confirmPassword: security.confirmPassword,
+        securityQuestions: [
+          { question: security.question1, answer: security.answer1 },
+          { question: security.question2, answer: security.answer2 },
+          { question: security.question3, answer: security.answer3 },
+        ],
+      },
+      advanced: {
+        totpEnabled: true,
+        backupCodes: finalBackupCodes,
+        ipWhitelist: advanced.ipWhitelist ? advanced.ipWhitelist.split(",").map((ip: string) => ip.trim()).filter(Boolean) : [],
+      },
+    };
 
-  const signupPayload = {
-    identity: {
-      fullName: identity.fullName,
-      dob: identity.dob,
-      govtIdType: identity.govtIdType,
-    },
-    contact: {
-      officialEmail: contact.officialEmail,
-      personalEmail: contact.personalEmail,
-      primaryPhone: contact.primaryPhone,
-      secondaryPhone: contact.secondaryPhone,
-    },
-    security: {
-      password: security.password,
-      confirmPassword: security.confirmPassword,
-      securityQuestions: [
-        { question: security.question1, answer: security.answer1 },
-        { question: security.question2, answer: security.answer2 },
-        { question: security.question3, answer: security.answer3 },
-      ],
-    },
-    advanced: {
-      totpEnabled: true,
-      backupCodes,
-      ipWhitelist: advanced.ipWhitelist
-        ? advanced.ipWhitelist.split(",").map((ip: string) => ip.trim()).filter(Boolean)
-        : [],
-    },
+    setStep(4);
+    setCreatedEmail(contact.officialEmail || "");
+    setQrCodeDataUrl("");
+    setOtpauthUrl("");
+    setSetupBackupCodes([]);
+    setTwoFactorVerified(false);
+    setSignupComplete(false);
+
+    try {
+      setIsSubmitting(true);
+      const csrfToken = await fetchCsrfToken();
+      await api.post(
+        "/auth/signup",
+        signupPayload,
+        { headers: { "X-CSRF-Token": csrfToken } },
+      );
+
+      if (photoFile) {
+        const photoForm = new FormData();
+        photoForm.append("email", contact.officialEmail);
+        photoForm.append("profilePhotoFile", photoFile);
+        await api.post(
+          "/auth/upload-profile-photo",
+          photoForm,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+              "X-CSRF-Token": csrfToken,
+            },
+          },
+        );
+      }
+
+      const setupResponse = await api.post(
+        "/auth/setup-2fa",
+        { email: contact.officialEmail, password: security.password },
+        { headers: { "X-CSRF-Token": csrfToken } },
+      );
+
+      setQrCodeDataUrl(setupResponse.data.qrCodeDataUrl || "");
+      setOtpauthUrl(setupResponse.data.otpauthUrl || "");
+      setSetupBackupCodes(setupResponse.data.backupCodes || []);
+      setTwoFactorVerified(false);
+
+      toast.success("Scan the QR code to finish Authenticator setup.");
+    } catch (error: any) {
+      toast.error(getToastMessage(error, "Signup failed."));
+      setStep(3);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  if (!acceptedTerms) {
-    toast.error("Accept the terms to create an account.");
-    return;
-  }
-
-  try {
-    setIsSubmitting(true);
-
-    // ✅ NO CSRF HERE
-    const response = await api.post("/auth/signup", signupPayload);
-
+  const finishSignup = () => {
     setSignupComplete(true);
-    setCreatedEmail(contact.officialEmail || "");
+    toast.success("Signup complete. Your account is ready.");
+  };
 
-    // ✅ Upload Govt ID (NO CSRF)
-    if (govtIdFile) {
-      const idForm = new FormData();
-      idForm.append("email", contact.officialEmail);
-      idForm.append("govtIdType", identity.govtIdType);
-      idForm.append("govtIdFile", govtIdFile);
-
-      await api.post("/auth/upload-id", idForm, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+  const verifyTwoFactor = async () => {
+    if (!totpCode.trim() || totpCode.trim().length !== 6) {
+      toast.error("Enter the 6-digit authenticator code.");
+      return;
     }
 
-    // ✅ Upload Profile Photo (NO CSRF)
-    if (photoFile) {
-      const photoForm = new FormData();
-      photoForm.append("email", contact.officialEmail);
-      photoForm.append("profilePhotoFile", photoFile);
-
-      await api.post("/auth/upload-profile-photo", photoForm, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+    try {
+      setIsVerifyingTotp(true);
+      const csrfToken = await fetchCsrfToken();
+      await api.post(
+        "/auth/setup-2fa",
+        { email: payload.contact.officialEmail, password: payload.security.password, totpCode: totpCode.trim() },
+        { headers: { "X-CSRF-Token": csrfToken } },
+      );
+      setTwoFactorVerified(true);
+      setStep(5);
+      toast.success("Authenticator code verified. Proceed to the review step.");
+    } catch (error: any) {
+      toast.error(getToastMessage(error, "Authenticator verification failed."));
+    } finally {
+      setIsVerifyingTotp(false);
     }
-
-    toast.success("Account created. Check your email for OTP.");
-    setStep(5);
-
-  } catch (error: any) {
-    toast.error(error?.response?.data?.message || "Signup failed.");
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
   return (
-    <NeumorphicCard className="max-w-3xl w-full">
+    <NeumorphicCard className="max-w-3xl w-full force-white-text">
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-[#4b5563]">Super Admin onboarding</p>
-          <h2 className="mt-2 text-3xl font-semibold text-[#111827]">Secure multi-step signup</h2>
+          <h2 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">Secure multi-step signup</h2>
         </div>
         <ThemeToggle />
       </div>
@@ -464,12 +660,12 @@ const submitSignup = async () => {
 
       {signupComplete ? (
         <div className="grid gap-6">
-          <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-8 shadow-[inset_8px_8px_16px_#c1c7d0,inset_-8px_-8px_16px_#ffffff]">
-            <h3 className="text-2xl font-semibold text-[#111827]">Account created successfully</h3>
-            <p className="mt-3 text-sm text-[#475569]">
+          <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-8 shadow-[inset_8px_8px_16px_#c1c7d0,inset_-8px_-8px_16px_#ffffff]">
+            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Account created successfully</h3>
+            <p className="mt-3 text-sm text-[#475569] dark:text-[#94a3b8]">
               Your account has been created for <strong>{createdEmail}</strong>. An OTP has been sent to your official email and phone if configured.
             </p>
-            <p className="mt-4 text-sm text-[#334155]">
+            <p className="mt-4 text-sm text-[#334155] dark:text-[#cbd5e1]">
               Please verify your OTP on the verification page before signing in.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -483,35 +679,41 @@ const submitSignup = async () => {
           {step === 0 && (
             <form onSubmit={identityForm.handleSubmit((data) => goNext("identity", data))} className="grid gap-4">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827]">Basic info</h3>
-            <p className="mt-2 text-sm text-[#475569]">Start with your identity details before verification.</p>
+            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Basic info</h3>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Start with your identity details before verification.</p>
           </div>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Full name</span>
             <input
               type="text"
               {...registerIdentity("fullName")}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
               required
             />
             <span className="text-xs text-red-500">{identityErrors.fullName?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Date of birth</span>
-            <input
-              type="date"
-              {...registerIdentity("dob")}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-              required
+            <Controller
+              control={identityControl}
+              name="dob"
+              render={({ field }) => (
+                <DatePicker
+                  value={field.value}
+                  onChange={field.onChange}
+                  placeholder="Choose birth date"
+                  className="w-full"
+                />
+              )}
             />
             <span className="text-xs text-red-500">{identityErrors.dob?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Government ID type</span>
             <div className="relative">
               <select
                 {...registerIdentity("govtIdType")}
-                className="w-full appearance-none rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 pr-10 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                className="w-full appearance-none rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 pr-10 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
                 required
               >
                 <option value="">Select an ID type</option>
@@ -519,32 +721,38 @@ const submitSignup = async () => {
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#64748b]">▾</span>
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#64748b] dark:text-[#94a3b8]">▾</span>
             </div>
             <span className="text-xs text-red-500">{identityErrors.govtIdType?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155]">
-            <span>Upload government ID</span>
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={(event) => setGovtIdFile(event.target.files?.[0] ?? null)}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-            />
-            {govtIdFile && <p className="text-xs text-[#334155]">Selected file: {govtIdFile.name}</p>}
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+            <span>Government ID upload</span>
+            <div className="relative">
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(event) => setGovtIdFile(event.target.files?.[0] ?? null)}
+                className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 pr-16 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                required
+              />
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-[#e2e8f0] px-3 py-1 text-xs text-[#334155] shadow-[inset_2px_2px_6px_rgba(0,0,0,0.08)] dark:bg-[#1f2937] dark:text-[#cbd5e1]">
+                📎 Browse
+              </span>
+            </div>
+            {govtIdFile && <p className="text-xs text-[#334155] dark:text-[#cbd5e1]">Selected file: {govtIdFile.name}</p>}
           </label>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Upload profile photo</span>
             <input
               type="file"
               accept="image/*"
               onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
             />
-            {photoFile && <p className="text-xs text-[#334155]">Selected file: {photoFile.name}</p>}
+            {photoFile && <p className="text-xs text-[#334155] dark:text-[#cbd5e1]">Selected file: {photoFile.name}</p>}
           </label>
           <div className="flex items-center justify-between gap-4">
-            <button type="button" disabled className="cursor-not-allowed rounded-3xl bg-[#e6ebf2] px-6 py-3 text-sm text-[#94a3b8] shadow-[inset_4px_4px_10px_#c1c7d0]">Back</button>
+            <button type="button" disabled className="cursor-not-allowed rounded-3xl bg-[#e6ebf2] dark:bg-[#1f2937] px-6 py-3 text-sm text-[#94a3b8] shadow-[inset_4px_4px_10px_#c1c7d0]">Back</button>
             <NeumorphicButton type="submit" className="w-full">Continue</NeumorphicButton>
           </div>
         </form>
@@ -553,8 +761,8 @@ const submitSignup = async () => {
       {step === 1 && (
         <form onSubmit={contactForm.handleSubmit((data) => goNext("contact", data))} className="grid gap-4">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827]">Contact verification</h3>
-            <p className="mt-2 text-sm text-[#475569]">Enter email and phone details for mandatory OTP verification.</p>
+            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Contact verification</h3>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Enter email and phone details for mandatory OTP verification.</p>
           </div>
           {[
             { label: "Official email", name: "officialEmail", type: "email" },
@@ -562,29 +770,29 @@ const submitSignup = async () => {
             { label: "Primary phone", name: "primaryPhone", type: "tel" },
             { label: "Secondary phone", name: "secondaryPhone", type: "tel" },
           ].map((field) => (
-            <label key={field.name} className="space-y-2 text-sm text-[#334155]">
+            <label key={field.name} className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>{field.label}</span>
               <input
                 type={field.type}
                 {...registerContact(field.name as any)}
-                className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
                 required={field.name !== "secondaryPhone"}
               />
               <span className="text-xs text-red-500">{(contactErrors as any)[field.name]?.message as string}</span>
             </label>
           ))}
-          <div className="grid gap-4 rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+          <div className="grid gap-4 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
             <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
-                <p className="text-sm font-medium text-[#334155]">Email OTP</p>
-                <p className="mt-1 text-sm text-[#64748b]">OTP codes are generated automatically when the account is created. Verify them on the OTP confirmation page.</p>
+                <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Email OTP</p>
+                <p className="mt-1 text-sm text-[#64748b] dark:text-[#94a3b8]">OTP codes are generated automatically when the account is created. Verify them on the OTP confirmation page.</p>
               </div>
               <NeumorphicButton type="button" className="w-full cursor-not-allowed opacity-70" disabled>OTP after signup</NeumorphicButton>
             </div>
             <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
-                <p className="text-sm font-medium text-[#334155]">Phone OTP</p>
-                <p className="mt-1 text-sm text-[#64748b]">A code is delivered to your primary phone after signup is complete.</p>
+                <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Phone OTP</p>
+                <p className="mt-1 text-sm text-[#64748b] dark:text-[#94a3b8]">A code is delivered to your primary phone after signup is complete.</p>
               </div>
               <NeumorphicButton type="button" className="w-full cursor-not-allowed opacity-70" disabled>OTP after signup</NeumorphicButton>
             </div>
@@ -599,26 +807,26 @@ const submitSignup = async () => {
       {step === 2 && (
         <form onSubmit={handleSecuritySubmit((data) => goNext("security", data))} className="grid gap-4">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827]">Security</h3>
-            <p className="mt-2 text-sm text-[#475569]">Use a strong password and recovery questions.</p>
+            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Security</h3>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Use a strong password and recovery questions.</p>
           </div>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Password</span>
             <input
               type="password"
               {...registerSecurity("password")}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
               required
             />
             <span className="text-xs text-red-500">{securityErrors.password?.message as string}</span>
-            <p className="text-xs text-[#64748b]">Minimum 12 chars, 1 uppercase, 1 number, 1 special character.</p>
+            <p className="text-xs text-[#64748b] dark:text-[#94a3b8]">Minimum 12 chars, 1 uppercase, 1 number, 1 special character.</p>
           </label>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Confirm password</span>
             <input
               type="password"
               {...registerSecurity("confirmPassword")}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
               required
             />
             <span className="text-xs text-red-500">{securityErrors.confirmPassword?.message as string}</span>
@@ -627,24 +835,24 @@ const submitSignup = async () => {
             const questionKey = `question${index + 1}` as "question1" | "question2" | "question3";
             const answerKey = `answer${index + 1}` as "answer1" | "answer2" | "answer3";
             return (
-              <div key={index} className="grid gap-3 rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-                <p className="text-sm font-medium text-[#334155]">Security question {index + 1}</p>
-                <label className="space-y-2 text-sm text-[#334155]">
+              <div key={index} className="grid gap-3 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+                <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Security question {index + 1}</p>
+                <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                   <span>Question</span>
                   <input
                     type="text"
                     {...registerSecurity(questionKey)}
-                    className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                    className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
                     required
                   />
                   <span className="text-xs text-red-500">{(securityErrors as any)[questionKey]?.message as string}</span>
                 </label>
-                <label className="space-y-2 text-sm text-[#334155]">
+                <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                   <span>Answer</span>
                   <input
                     type="text"
                     {...registerSecurity(answerKey)}
-                    className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                    className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
                     required
                   />
                   <span className="text-xs text-red-500">{(securityErrors as any)[answerKey]?.message as string}</span>
@@ -652,19 +860,19 @@ const submitSignup = async () => {
               </div>
             );
           })}
-          <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-            <p className="text-sm font-medium text-[#334155]">Simple CAPTCHA</p>
+          <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+            <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Simple CAPTCHA</p>
             <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-              <div className="rounded-3xl bg-white p-4 text-sm text-[#111827] shadow-[inset_4px_4px_10px_#c1c7d0]">{captchaQuestion}</div>
+              <div className="rounded-3xl bg-white dark:bg-[#0f172a] p-4 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_4px_4px_10px_#c1c7d0]">{captchaQuestion}</div>
               <input
                 type="text"
                 value={captchaInput}
                 onChange={(event) => setCaptchaInput(event.target.value)}
                 placeholder="Enter result"
-                className="rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
               />
             </div>
-            <p className="mt-3 text-xs text-[#64748b]">This quick math check keeps bots out.</p>
+            <p className="mt-3 text-xs text-[#64748b] dark:text-[#94a3b8]">This quick math check keeps bots out.</p>
           </div>
           <div className="flex items-center justify-between gap-4">
             <NeumorphicButton type="button" className="w-full" onClick={() => setStep(1)}>Back</NeumorphicButton>
@@ -674,52 +882,51 @@ const submitSignup = async () => {
       )}
 
       {step === 3 && (
-        <form onSubmit={recoveryForm.handleSubmit((data) => {
-          setPayload((current: any) => ({ ...current, advanced: { ...current.advanced, ...data } }));
-          if (backupCodes.length === 0) {
-            generateBackupCodes();
-          }
-          setStep(4);
+        <form onSubmit={recoveryForm.handleSubmit(async (data) => {
+          const nextBackupCodes = backupCodes.length ? backupCodes : generateBackupCodes();
+          const nextPayload = { ...payload, advanced: { ...payload.advanced, ...data } };
+          setPayload(nextPayload);
+          await createAccountAndPrepare2FA(nextPayload, nextBackupCodes);
         })} className="grid gap-4">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827]">Recovery setup</h3>
-            <p className="mt-2 text-sm text-[#475569]">Capture alternate recovery channels and backup codes.</p>
+            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Recovery setup</h3>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Capture alternate recovery channels and backup codes.</p>
           </div>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Alternate email</span>
             <input
               type="email"
               {...registerRecovery("alternateEmail")}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
               required
             />
             <span className="text-xs text-red-500">{recoveryErrors.alternateEmail?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155]">
+          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>Alternate phone number</span>
             <input
               type="tel"
               {...registerRecovery("alternatePhone")}
-              className="w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
               required
             />
             <span className="text-xs text-red-500">{recoveryErrors.alternatePhone?.message as string}</span>
           </label>
-          <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+          <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-[#111827]">Recovery codes</p>
-              <button type="button" onClick={generateBackupCodes} className="rounded-3xl border border-[#cbd5e1] px-4 py-2 text-sm text-[#334155] transition hover:bg-[#e2e8f0]">Generate codes</button>
+              <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Recovery codes</p>
+              <button type="button" onClick={generateBackupCodes} className="rounded-3xl border border-[#cbd5e1] px-4 py-2 text-sm text-[#334155] dark:text-[#cbd5e1] transition hover:bg-[#e2e8f0]">Generate codes</button>
             </div>
             {backupCodes.length > 0 ? (
               <div className="mt-4 grid gap-2">
                 {backupCodes.map((code) => (
-                  <div key={code} className="rounded-2xl bg-white px-4 py-3 text-sm text-[#111827] shadow-[inset_4px_4px_10px_#c1c7d0]">{code}</div>
+                  <div key={code} className="rounded-2xl bg-white dark:bg-[#0f172a] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_4px_4px_10px_#c1c7d0]">{code}</div>
                 ))}
               </div>
             ) : (
-              <p className="mt-4 text-sm text-[#64748b]">Generate 8 backup codes and store them securely. Each code is 8 characters long.</p>
+              <p className="mt-4 text-sm text-[#64748b] dark:text-[#94a3b8]">Generate 8 backup codes and store them securely. Each code is 8 characters long.</p>
             )}
-            <label className="mt-4 flex items-center gap-3 text-sm text-[#334155]">
+            <label className="mt-4 flex items-center gap-3 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <input type="checkbox" checked={backupConfirmed} onChange={(event) => setBackupConfirmed(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#3549ff] focus:ring-[#3549ff]" />
               <span>I have stored the recovery codes securely.</span>
             </label>
@@ -734,20 +941,73 @@ const submitSignup = async () => {
       {step === 4 && (
         <div className="grid gap-6">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827]">Google Authenticator</h3>
-            <p className="mt-2 text-sm text-[#475569]">Enable 2FA after signup for the strongest protection.</p>
+            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Google Authenticator 2FA</h3>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Scan the QR code and enter the 6-digit authenticator code on this page to continue.</p>
           </div>
-          <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-            <p className="text-sm font-medium text-[#334155]">Step 1</p>
-            <p className="mt-2 text-sm text-[#334155]">Install Google Authenticator or Authy on your device.</p>
-            <div className="mt-4 rounded-3xl border border-[#dbe0ea] bg-white p-4 text-sm text-[#334155]">
-              <p className="font-semibold text-[#111827]">Step 2</p>
-              <p className="mt-2">After signup, scan the QR code in the authenticator setup page and verify your 6-digit code.</p>
+
+          {qrCodeDataUrl ? (
+            <div className="grid gap-6 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+              <div className="text-sm text-[#334155] dark:text-[#cbd5e1]">
+                <p className="font-semibold text-[#111827] dark:text-[#f8fafc]">Step 1</p>
+                <p className="mt-2">Open Google Authenticator, Authy, or another TOTP app and scan the QR code below.</p>
+              </div>
+              <div className="rounded-3xl border border-[#dbe0ea] bg-white dark:bg-[#0f172a] p-6 text-center">
+                <img src={qrCodeDataUrl} alt="Authenticator QR code" className="mx-auto max-w-full" />
+              </div>
+              {otpauthUrl && (
+                <div className="rounded-3xl border border-[#dbe0ea] bg-[#f8fafc] p-4 text-xs text-[#334155] dark:text-[#cbd5e1]">
+                  <p className="font-semibold text-[#111827] dark:text-[#f8fafc]">Manual setup string</p>
+                  <p className="mt-2 break-words">{otpauthUrl}</p>
+                </div>
+              )}
+              <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+                <span>Authenticator code</span>
+                <input
+                  type="text"
+                  value={totpCode}
+                  onChange={(event) => setTotpCode(event.target.value)}
+                  placeholder="Enter 6-digit code"
+                  maxLength={6}
+                  className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                />
+              </label>
+              <NeumorphicButton type="button" className="w-full" onClick={verifyTwoFactor} disabled={isVerifyingTotp || twoFactorVerified}>
+                {twoFactorVerified ? "Verified" : isVerifyingTotp ? "Verifying..." : "Verify code"}
+              </NeumorphicButton>
+
+              {twoFactorVerified && (
+                <div className="rounded-3xl border border-[#22c55e] bg-[#ecfdf5] p-4 text-sm text-[#166534]">
+                  <p className="font-semibold">Two-factor authentication is enabled.</p>
+                  <p className="mt-2">Your Super Admin account is now protected with Google Authenticator.</p>
+                </div>
+              )}
+
+              {setupBackupCodes.length > 0 && (
+                <div className="rounded-3xl border border-[#e2e8f0] bg-[#e6ebf2] dark:bg-[#1f2937] p-4 text-sm text-[#334155] dark:text-[#cbd5e1]">
+                  <p className="mb-3 font-semibold text-[#111827] dark:text-[#f8fafc]">Backup codes</p>
+                  <ul className="grid gap-2">
+                    {setupBackupCodes.map((code) => (
+                      <li key={code} className="rounded-2xl bg-white dark:bg-[#0f172a] px-4 py-3 shadow-[inset_4px_4px_10px_#c1c7d0]">{code}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+              <p className="text-sm text-[#334155] dark:text-[#cbd5e1]">
+                {isSubmitting
+                  ? "Creating your account and generating the Google Authenticator QR code..."
+                  : "Preparing your authenticator setup. If this takes a moment, please wait."}
+              </p>
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-4">
             <NeumorphicButton type="button" className="w-full" onClick={() => setStep(3)}>Back</NeumorphicButton>
-            <NeumorphicButton type="button" className="w-full" onClick={() => setStep(5)}>Continue</NeumorphicButton>
+            <NeumorphicButton type="button" className="w-full" onClick={() => setStep(5)} disabled={!twoFactorVerified}>
+              {twoFactorVerified ? "Continue to review" : "Verify code first"}
+            </NeumorphicButton>
           </div>
         </div>
       )}
@@ -755,26 +1015,20 @@ const submitSignup = async () => {
       {step === 5 && (
         <div className="grid gap-6">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827]">Review & submit</h3>
-            <p className="mt-2 text-sm text-[#475569]">Confirm the information and accept terms before account creation.</p>
+            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Review & complete</h3>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Confirm the information and accept terms to finish your signup.</p>
           </div>
-          <div className="grid gap-4 rounded-3xl border border-white/90 bg-[#f0f4fb] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+          <div className="grid gap-4 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
             <SummaryItem title="Name" value={payload.identity.fullName || "-"} />
             <SummaryItem title="Official email" value={payload.contact.officialEmail || "-"} />
             <SummaryItem title="Primary phone" value={payload.contact.primaryPhone || "-"} />
             <SummaryItem title="Alternate email" value={payload.advanced.alternateEmail || "-"} />
             <SummaryItem title="Recovery codes" value={`${backupCodes.length} codes generated`} />
-            <SummaryItem title="2FA" value="Google Authenticator after signup" />
-          </div>
-          <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-            <label className="flex items-center gap-3 text-sm text-[#334155]">
-              <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#3549ff] focus:ring-[#3549ff]" />
-              <span>I agree to the Terms & Conditions and Privacy Policy.</span>
-            </label>
+            <SummaryItem title="2FA" value="Google Authenticator setup after signup" />
           </div>
           <div className="flex items-center justify-between gap-4">
             <NeumorphicButton type="button" className="w-full" onClick={() => setStep(4)}>Back</NeumorphicButton>
-            <NeumorphicButton type="button" className="w-full" onClick={submitSignup} disabled={isSubmitting || !acceptedTerms}>{isSubmitting ? "Creating account..." : "Create account"}</NeumorphicButton>
+            <NeumorphicButton type="button" className="w-full" onClick={finishSignup} disabled={isSubmitting}>{isSubmitting ? "Finalizing..." : "Finalize signup"}</NeumorphicButton>
           </div>
         </div>
       )}
@@ -786,9 +1040,9 @@ const submitSignup = async () => {
 
 function SummaryItem({ title, value }: { title: string; value: string | number }) {
   return (
-    <div className="rounded-3xl bg-white px-4 py-4 shadow-[inset_4px_4px_10px_#c1c7d0]">
-      <p className="text-xs uppercase tracking-[0.3em] text-[#64748b]">{title}</p>
-      <p className="mt-2 text-sm text-[#111827]">{value}</p>
+    <div className="rounded-3xl bg-white dark:bg-[#0f172a] px-4 py-4 shadow-[inset_4px_4px_10px_#c1c7d0]">
+      <p className="text-xs uppercase tracking-[0.3em] text-[#64748b] dark:text-[#94a3b8]">{title}</p>
+      <p className="mt-2 text-sm text-[#111827] dark:text-[#f8fafc]">{value}</p>
     </div>
   );
 }

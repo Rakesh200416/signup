@@ -16,9 +16,11 @@ import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { loginSchema, LoginDto } from "./dto/login.dto";
 import { requestOtpSchema, RequestOtpDto } from "./dto/request-otp.dto";
 import { signupSchema, SignupDto } from "./dto/signup.dto";
+import { validateMagicLinkSchema, ValidateMagicLinkDto } from "./dto/validate-magic-link.dto";
 import { verifyOtpSchema, VerifyOtpDto } from "./dto/verify-otp.dto";
 import { setup2FASchema, Setup2FADto } from "./dto/setup-2fa.dto";
 import { recoverSchema, RecoverDto } from "./dto/recover.dto";
+import { resetPasswordSchema, ResetPasswordDto } from "./dto/reset-password.dto";
 import { refreshTokenSchema, RefreshTokenDto } from "./dto/refresh-token.dto";
 import { uploadIdSchema, UploadIdDto } from "./dto/upload-id.dto";
 import { uploadProfilePhotoSchema, UploadProfilePhotoDto } from "./dto/upload-profile-photo.dto";
@@ -46,6 +48,18 @@ export class AuthController {
     return this.authService.login(loginDto, ip);
   }
 
+  @Post("invite-platform-admin")
+  @UsePipes(new ZodValidationPipe(signupSchema))
+  async invitePlatformAdmin(@Body() signupDto: SignupDto) {
+    return this.authService.invitePlatformAdmin(signupDto);
+  }
+
+  @Post("validate-magic-link")
+  @UsePipes(new ZodValidationPipe(validateMagicLinkSchema))
+  async validateMagicLink(@Body() validateMagicLinkDto: ValidateMagicLinkDto) {
+    return this.authService.validateMagicLink(validateMagicLinkDto.token);
+  }
+
   @Post("request-otp")
   @UsePipes(new ZodValidationPipe(requestOtpSchema))
   async requestOtp(@Body() requestOtpDto: RequestOtpDto) {
@@ -62,6 +76,12 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(verifyOtpSchema))
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyOtp(verifyOtpDto);
+  }
+
+  @Post("reset-password")
+  @UsePipes(new ZodValidationPipe(resetPasswordSchema))
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    return this.authService.resetPassword(resetPasswordDto);
   }
 
   @Post("setup-2fa")

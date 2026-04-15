@@ -72,4 +72,63 @@ export class UserService {
       },
     });
   }
+
+  async createPlatformAdmin(data: {
+    name: string;
+    email: string;
+    password: string;
+    profile: {
+      govtIdType: string;
+      govtIdUrl?: string | null;
+      profilePhotoUrl?: string | null;
+      phonePrimary: string;
+      phoneSecondary?: string;
+      backupEmail?: string;
+      ipWhitelist?: string[];
+    };
+    securityQuestions: Array<{ question: string; answerHash: string }>;
+    backupCodes: string[];
+  }) {
+    return this.prisma.user.create({
+      data: {
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        role: "PLATFORM_ADMIN",
+        isVerified: false,
+        isApproved: true,
+        profile: {
+          create: {
+            govtIdType: data.profile.govtIdType,
+            govtIdUrl: data.profile.govtIdUrl ?? null,
+            profilePhotoUrl: data.profile.profilePhotoUrl ?? null,
+            phonePrimary: data.profile.phonePrimary,
+            phoneSecondary: data.profile.phoneSecondary ?? null,
+            backupEmail: data.profile.backupEmail ?? null,
+            ipWhitelist: data.profile.ipWhitelist ?? [],
+          },
+        },
+        security: {
+          create: {
+            securityQuestions: data.securityQuestions as any,
+            totpSecret: null,
+            backupCodes: data.backupCodes,
+          },
+        },
+        verification: {
+          create: {
+            emailOTP: null,
+            phoneOTP: null,
+            otpExpiry: null,
+            failedAttempts: 0,
+          },
+        },
+      },
+      include: {
+        profile: true,
+        security: true,
+        verification: true,
+      },
+    });
+  }
 }

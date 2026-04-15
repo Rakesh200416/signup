@@ -19,6 +19,7 @@ import { SignupDto } from "./dto/signup.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RequestOtpDto } from "./dto/request-otp.dto";
 import { VerifyOtpDto } from "./dto/verify-otp.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { Setup2FADto } from "./dto/setup-2fa.dto";
 import { RecoverDto } from "./dto/recover.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
@@ -174,6 +175,62 @@ export class AuthService {
     };
   }
 
+  async invitePlatformAdmin(signupDto: SignupDto) {
+    const existing = await this.userService.findByEmail(signupDto.contact.officialEmail);
+    if (existing) {
+      throw new ConflictException("A user with this official email already exists.");
+    }
+
+    const passwordHash = await this.hashValue(signupDto.security.password);
+    const securityQuestions = await this.hashSecurityAnswers(signupDto.security.securityQuestions);
+    const backupCodes = this.generateBackupCodes();
+
+    const user = await this.userService.createPlatformAdmin({
+      name: signupDto.identity.fullName,
+      email: signupDto.contact.officialEmail,
+      password: passwordHash,
+      profile: {
+        govtIdType: signupDto.identity.govtIdType,
+        govtIdUrl: signupDto.identity.govtIdUrl ?? null,
+        profilePhotoUrl: signupDto.identity.profilePhotoUrl ?? null,
+        phonePrimary: signupDto.contact.primaryPhone,
+        phoneSecondary: signupDto.contact.secondaryPhone,
+        backupEmail: signupDto.contact.personalEmail,
+        ipWhitelist: signupDto.advanced.ipWhitelist ?? [],
+      },
+      securityQuestions,
+      backupCodes,
+    });
+
+    const magicEmail = signupDto.advanced.magicLinkEmail ?? signupDto.contact.officialEmail;
+    const magicToken = await this.generateMagicLink(user.id, "signin");
+    const url = `${this.configService.get<string>("FRONTEND_URL", "http://localhost:3000")}/platform-admin/magic-link?token=${magicToken}`;
+    await this.emailService.sendMagicLink(magicEmail, url);
+
+    return {
+      message: "Platform admin invite sent successfully.",
+      email: magicEmail,
+      magicLink: url,
+      createdUserId: user.id,
+    };
+  }
+
+  async validateMagicLink(token: string) {
+    const magicLink = await this.prisma.magicLink.findUnique({ where: { token } });
+    if (!magicLink || magicLink.used || magicLink.expiresAt < new Date() || magicLink.purpose !== "SIGNIN") {
+      throw new UnauthorizedException("Magic link invalid or expired.");
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: magicLink.userId } });
+    if (!user) {
+      throw new UnauthorizedException("Magic link is invalid.");
+    }
+
+    await this.prisma.magicLink.update({ where: { id: magicLink.id }, data: { used: true } });
+
+    return { email: user.email, expiresAt: magicLink.expiresAt };
+  }
+
   async login(loginDto: LoginDto, ip: string) {
     const user = await this.userService.findByEmail(loginDto.email);
     const userAgent = this.configService.get<string>("USER_AGENT", "unknown");
@@ -205,12 +262,16 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials.");
     }
 
-    if (!user.isVerified) {
-      await this.recordLoginAttempt(user.id, user.email, false, "Account not verified", ip, userAgent);
-      throw new ForbiddenException("Account must complete OTP verification before login.");
+    const validatedOtp = await this.otpService.validateOtp(user.id, loginDto.otpCode);
+    if (!validatedOtp) {
+      await this.recordLoginAttempt(user.id, user.email, false, "Invalid OTP", ip, userAgent);
+      throw new UnauthorizedException("Invalid OTP code.");
     }
 
-    await this.otpService.validateOtp(user.id, loginDto.otpCode);
+    if (!user.isVerified) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { isVerified: true } });
+      user.isVerified = true;
+    }
 
     if (user.profile?.ipWhitelist && Array.isArray(user.profile.ipWhitelist) && user.profile.ipWhitelist.length > 0) {
       const normalizedIp = ip.toString();
@@ -251,7 +312,7 @@ export class AuthService {
 
     if (requestOtpDto.method === "magicLink") {
       const magicToken = await this.generateMagicLink(user.id, requestOtpDto.purpose ?? "signin");
-      const url = `${this.configService.get<string>("FRONTEND_URL", "http://localhost:3000")}/auth/magic-link?token=${magicToken}`;
+      const url = `${this.configService.get<string>("FRONTEND_URL", "http://localhost:3000")}/platform-admin/magic-link?token=${magicToken}`;
       await this.emailService.sendMagicLink(user.email, url);
       return {
         message: "Magic sign-in link sent to your official email.",
@@ -290,7 +351,7 @@ export class AuthService {
       throw new UnauthorizedException("No matching account found.");
     }
 
-    const verified = await this.otpService.validateOtp(user.id, verifyOtpDto.otpCode);
+    const verified = await this.otpService.validateOtp(user.id, verifyOtpDto.otpCode, false);
     if (!verified) {
       throw new UnauthorizedException("OTP validation failed.");
     }
@@ -432,5 +493,19 @@ export class AuthService {
       default:
         throw new BadRequestException("Unsupported recovery method.");
     }
+  }
+
+  async resetPassword(resetPasswordDto: ResetPasswordDto) {
+    const user = await this.userService.findByEmail(resetPasswordDto.email);
+    if (!user) {
+      throw new UnauthorizedException("Unable to reset password.");
+    }
+
+    await this.otpService.validateOtp(user.id, resetPasswordDto.otpCode);
+
+    const passwordHash = await this.hashValue(resetPasswordDto.password);
+    await this.prisma.user.update({ where: { id: user.id }, data: { password: passwordHash } });
+
+    return { message: "Password reset successfully. You can now sign in with your new password." };
   }
 }

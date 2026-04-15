@@ -29,9 +29,11 @@ export class EmailService {
       if (error?.response?.body?.errors) {
         console.error("SendGrid error details:", JSON.stringify(error.response.body.errors));
       }
-      throw new InternalServerErrorException(
-        "Failed to send email. Verify SendGrid API key and sender identity.",
-      );
+      const errorMessage = Array.isArray(error?.response?.body?.errors)
+        ? error.response.body.errors.map((err: any) => err.message).join("; ")
+        : error?.response?.body?.message || error?.message ||
+          "Failed to send email. Verify SendGrid API key and sender identity.";
+      throw new InternalServerErrorException(errorMessage);
     }
   }
 
@@ -49,13 +51,14 @@ export class EmailService {
   }
 
   async sendMagicLink(to: string, link: string) {
-    const subject = "NeuroLXP Super Admin Sign-In Link";
+    const subject = "Welcome to NeuroLXP – Platform Admin Sign-In";
     const html = `
       <div style="font-family:Arial,sans-serif;color:#0f172a;">
-        <h2>Secure sign-in link</h2>
-        <p>Click the link below to sign in to NeuroLXP. It expires in 10 minutes.</p>
+        <h2>Welcome to NeuroLXP</h2>
+        <p>Your platform admin access has been created. Click the link below to sign in and complete your first login.</p>
         <p><a href="${link}" style="color:#2563eb;">${link}</a></p>
-        <p>If you did not request this, ignore this message.</p>
+        <p>This link will expire in 10 minutes.</p>
+        <p>If you did not expect this email, please ignore it or contact support.</p>
       </div>
     `;
     await this.sendEmail(to, subject, html);
