@@ -104,20 +104,27 @@ interface LoginFormProps {
 export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTitle = "Secure sign in" }: LoginFormProps = {}) {
   const [otpRequested, setOtpRequested] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState<"email" | "phone">("email");
-  const [authStage, setAuthStage] = useState<"otp" | "totp" | "security" | "recovery" | "govtId">("otp");
+  const [authStage, setAuthStage] = useState<"otp" | "totp" | "security" | "recovery" | "googleId" | "govtId">("otp");
   const [otpVerified, setOtpVerified] = useState(false);
+  const [fallbackVerified, setFallbackVerified] = useState(false);
   const [failedOtpAttempts, setFailedOtpAttempts] = useState(0);
+  const [otpRequestCount, setOtpRequestCount] = useState(0);
+  const [otpRequestBlocked, setOtpRequestBlocked] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [totpInput, setTotpInput] = useState("");
   const [securityAnswers, setSecurityAnswers] = useState(["", "", ""]);
-  const [recoveryCodeInput, setRecoveryCodeInput] = useState("");
+  const [googleIdInput, setGoogleIdInput] = useState("");
   const [govtIdInput, setGovtIdInput] = useState("");
+  const [recoveryCodeInput, setRecoveryCodeInput] = useState("");
   const [isRequestingOtp, setIsRequestingOtp] = useState(false);
   const [isVerifyingTotp, setIsVerifyingTotp] = useState(false);
   const [isVerifyingSecurity, setIsVerifyingSecurity] = useState(false);
   const [isVerifyingRecovery, setIsVerifyingRecovery] = useState(false);
   const [isVerifyingGovtId, setIsVerifyingGovtId] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
+  const [otpauthUrl, setOtpauthUrl] = useState("");
+  const [isInitializingTotp, setIsInitializingTotp] = useState(false);
   const router = useRouter();
 
   const {
@@ -146,6 +153,11 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
   };
 
   const requestOtp = async () => {
+    if (otpRequestBlocked) {
+      toast.error("OTP generation is currently limited. Use fallback methods instead.");
+      return;
+    }
+
     if (!email || !password) {
       toast.error("Enter email and password before requesting OTP.");
       return;
@@ -159,15 +171,72 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
         { email, method: deliveryMethod },
         { headers: { "X-CSRF-Token": csrfToken } },
       );
-      toast.success(response.data.message || "OTP requested successfully.");
-      setOtpRequested(true);
-      setAuthStage("otp");
-      setOtpVerified(false);
+
+      const limitReached = response.data?.limitReached;
+      const nextCount = otpRequestCount + 1;
+      setOtpRequestCount(nextCount);
+
+      if (limitReached) {
+        setShowFallback(true);
+        setAuthStage("totp");
+        setOtpRequestBlocked(true);
+        setOtpRequested(false);
+        toast.error(response.data.message || "OTP generation has reached its limit. Use fallback methods.");
+        await initiateTotpSetup();
+      } else {
+        toast.success(response.data.message || "OTP requested successfully.");
+        setOtpRequested(true);
+        setAuthStage("otp");
+        setOtpVerified(false);
+      }
+
+      if (nextCount >= 5) {
+        setShowFallback(true);
+        setAuthStage("totp");
+      }
     } catch (error: any) {
-      toast.error(getToastMessage(error, "OTP request failed."));
+      const message = getToastMessage(error, "OTP request failed.");
+      toast.error(message);
+      if (typeof message === "string" && message.toLowerCase().includes("temporarily limited")) {
+        setShowFallback(true);
+        setAuthStage("totp");
+        setOtpRequestBlocked(true);
+        await initiateTotpSetup();
+      }
     } finally {
       setIsRequestingOtp(false);
     }
+  };
+
+  const initiateTotpSetup = async () => {
+    if (!email || !password) {
+      toast.error("Enter email and password before starting Authenticator setup.");
+      return;
+    }
+
+    try {
+      setIsInitializingTotp(true);
+      const csrfToken = await fetchCsrfToken();
+      const response = await api.post(
+        "/auth/setup-2fa",
+        { email: email.trim(), password },
+        { headers: { "X-CSRF-Token": csrfToken } },
+      );
+      setQrCodeDataUrl(response.data.qrCodeDataUrl || "");
+      setOtpauthUrl(response.data.otpauthUrl || "");
+      toast.success("Scan the QR code with Google Authenticator and enter the 6-digit code below.");
+    } catch (error: any) {
+      toast.error(getToastMessage(error, "Unable to initialize Google Authenticator."));
+    } finally {
+      setIsInitializingTotp(false);
+    }
+  };
+
+  const openFallbackMethods = async () => {
+    setShowFallback(true);
+    setAuthStage("totp");
+    setOtpRequestBlocked(true);
+    await initiateTotpSetup();
   };
 
   const verifyOtpCode = async () => {
@@ -190,20 +259,30 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
         { headers: { "X-CSRF-Token": csrfToken } },
       );
       setOtpVerified(true);
+      setFailedOtpAttempts(0);
+      setShowFallback(false);
       toast.success("OTP code accepted. Click Let's dive to complete sign in.");
     } catch (error: any) {
-      toast.error(getToastMessage(error, "OTP verification failed."));
+      const nextAttempts = failedOtpAttempts + 1;
+      setFailedOtpAttempts(nextAttempts);
+      if (nextAttempts >= 5) {
+        setShowFallback(true);
+        setAuthStage("totp");
+        toast.error("OTP failed too many times. Use Google Authenticator, security questions, or Google ID fallback.");
+      } else {
+        toast.error(getToastMessage(error, "OTP verification failed."));
+      }
     }
   };
 
   const completeSignIn = async (values: z.infer<typeof loginSchema>) => {
-    if (!otpRequested) {
-      toast.error("Request an OTP before signing in.");
+    if (!otpRequested && !fallbackVerified) {
+      toast.error("Request an OTP before signing in or use a fallback method.");
       return;
     }
 
-    if (!otpVerified) {
-      toast.error("Verify the OTP before signing in.");
+    if (!otpVerified && !fallbackVerified) {
+      toast.error("Verify the OTP or complete a fallback authentication method before signing in.");
       return;
     }
 
@@ -215,7 +294,10 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
         {
           email: values.email.trim(),
           password: values.password,
-          otpCode: values.otpCode.trim(),
+          otpCode: values.otpCode?.trim(),
+          totpCode: totpInput.trim() || undefined,
+          securityAnswers: securityAnswers.filter((answer) => answer.trim().length > 0),
+          googleId: googleIdInput.trim() || undefined,
           captchaToken: values.captchaToken || "login-captcha-token",
           acceptTerms: values.acceptTerms ?? true,
         },
@@ -237,8 +319,8 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
       return;
     }
 
-    setAuthStage("security");
-    toast.success("TOTP attempt recorded. Next, answer your security questions.");
+    setFallbackVerified(true);
+    toast.success("Google Authenticator code entered. Complete sign in now or try security questions if it fails.");
   };
 
   const verifySecurity = () => {
@@ -248,8 +330,18 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
       return;
     }
 
-    setAuthStage("recovery");
-    toast.success("Security questions accepted. Next, enter a recovery code.");
+    setFallbackVerified(true);
+    toast.success("Security answers accepted. Complete sign in now or continue to Google ID if needed.");
+  };
+
+  const verifyGoogleId = () => {
+    if (!googleIdInput.trim() || googleIdInput.trim().length < 3) {
+      toast.error("Enter the Google ID used at signup.");
+      return;
+    }
+
+    setFallbackVerified(true);
+    toast.success("Google ID accepted. Complete sign in now.");
   };
 
   const verifyRecovery = () => {
@@ -311,10 +403,27 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
           </div>
         </div>
         <div className="flex justify-center">
-          <NeumorphicButton type="button" className="w-full max-w-[320px]" onClick={requestOtp} disabled={isRequestingOtp}>
-            {otpRequested ? "Resend OTP" : "Request OTP"}
+          <NeumorphicButton
+            type="button"
+            className="w-full max-w-[320px]"
+            onClick={requestOtp}
+            disabled={isRequestingOtp || otpRequestBlocked}
+          >
+            {otpRequestBlocked ? "OTP limit reached" : otpRequested ? "Resend OTP" : "Request OTP"}
           </NeumorphicButton>
         </div>
+
+        {(otpRequestBlocked || failedOtpAttempts >= 5) && !showFallback ? (
+          <div className="mt-5 rounded-3xl border border-amber-300/80 bg-amber-50 p-4 text-sm text-[#92400e] dark:border-amber-400/30 dark:bg-[#2b1f0f] dark:text-[#f8d19b]">
+            <p className="font-semibold">OTP generation is temporarily limited.</p>
+            <p className="mt-2 text-[#475569] dark:text-[#cbd5e1]">
+              Email and phone OTP will resume after 5 hours. Meanwhile, use Google Authenticator or fallback verification.
+            </p>
+            <NeumorphicButton type="button" className="mt-4 w-full" onClick={openFallbackMethods}>
+              Check other verification methods
+            </NeumorphicButton>
+          </div>
+        ) : null}
 
         <div className="neumorphic-surface p-5">
           <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
@@ -341,7 +450,7 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
           {showFallback && (
             <div className="mt-6 neumorphic-surface p-4 text-sm text-[#334155] dark:text-[#e2e8f0]">
               <p className="font-semibold text-[#92400e] dark:text-[#fbbf24]">Ok, don't worry — let's try other methods.</p>
-              <p className="mt-2 text-[#475569] dark:text-[#94a3b8]">Start with Google Authenticator. If that fails, continue to security questions, recovery code, then government ID verification.</p>
+              <p className="mt-2 text-[#475569] dark:text-[#94a3b8]">Start with Google Authenticator. If that fails, continue to security questions, then verify your Google ID from signup.</p>
             </div>
           )}
         </div>
@@ -349,7 +458,24 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
         {authStage === "totp" && showFallback && (
           <div className="mt-6 neumorphic-surface p-5 dark:text-[#cbd5e1]">
             <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Google Authenticator</p>
-            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Use your authenticator app to enter the 6-digit code here.</p>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">
+              Scan the QR code with Google Authenticator or Authy, then enter the 6-digit code.
+            </p>
+            {qrCodeDataUrl ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                <img src={qrCodeDataUrl} alt="Authenticator QR code" className="mx-auto max-w-full" />
+                <p className="mt-3 text-xs text-[#64748b] dark:text-[#94a3b8]">
+                  If you already have a configured authenticator, enter the code directly.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <p className="text-xs text-[#64748b] dark:text-[#94a3b8]">No QR code yet? Generate one now.</p>
+                <NeumorphicButton type="button" className="mt-3 w-full" onClick={initiateTotpSetup} disabled={isInitializingTotp}>
+                  {isInitializingTotp ? "Generating QR code..." : "Generate QR code"}
+                </NeumorphicButton>
+              </div>
+            )}
             <input
               value={totpInput}
               onChange={(event) => setTotpInput(event.target.value)}
@@ -360,7 +486,12 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
               <NeumorphicButton type="button" className="w-full" onClick={verifyTotp} disabled={isVerifyingTotp}>
                 Verify authenticator
               </NeumorphicButton>
-              <NeumorphicButton type="button" className="w-full" onClick={() => setAuthStage("security")}>Try security questions</NeumorphicButton>
+              <NeumorphicButton type="button" className="w-full" onClick={() => {
+                setAuthStage("security");
+                setFallbackVerified(false);
+              }}>
+                Try security questions
+              </NeumorphicButton>
             </div>
           </div>
         )}
@@ -386,7 +517,26 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
               <NeumorphicButton type="button" className="w-full" onClick={verifySecurity} disabled={isVerifyingSecurity}>
                 Verify answers
               </NeumorphicButton>
-              <NeumorphicButton type="button" className="w-full" onClick={() => setAuthStage("recovery")}>Use recovery code</NeumorphicButton>
+              <NeumorphicButton type="button" className="w-full" onClick={() => setAuthStage("googleId")}>Use Google ID</NeumorphicButton>
+            </div>
+          </div>
+        )}
+
+        {authStage === "googleId" && showFallback && (
+          <div className="mt-6 neumorphic-surface p-5 dark:text-[#cbd5e1]">
+            <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Google ID verification</p>
+            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Enter the Google ID you used during signup.</p>
+            <input
+              value={googleIdInput}
+              onChange={(event) => setGoogleIdInput(event.target.value)}
+              placeholder="Enter Google ID"
+              className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+            />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <NeumorphicButton type="button" className="w-full" onClick={verifyGoogleId}>
+                Verify Google ID
+              </NeumorphicButton>
+              <NeumorphicButton type="button" className="w-full" onClick={() => setAuthStage("security")}>Back to security questions</NeumorphicButton>
             </div>
           </div>
         )}

@@ -21,6 +21,7 @@ const platformAdminInviteSchema = z
     personalEmail: z.string().email("Enter a valid personal email.").optional().or(z.literal("")),
     primaryPhone: z.string().min(8, "Primary phone is required."),
     secondaryPhone: z.string().min(8, "Secondary phone must be at least 8 digits.").optional().or(z.literal("")),
+    googleId: z.string().min(3, "Google ID must be at least 3 characters.").optional().or(z.literal("")),
     password: z
       .string()
       .min(12, "Password must be at least 12 characters.")
@@ -53,6 +54,7 @@ type ParsedInviteRow = {
   personalEmail?: string;
   primaryPhone: string;
   secondaryPhone?: string;
+  googleId?: string;
   password: string;
   confirmPassword: string;
   question1: string;
@@ -138,6 +140,7 @@ const buildSignupPayload = (values: PlatformAdminInviteFormValues) => ({
     ],
   },
   advanced: {
+    googleId: values.googleId || undefined,
     ipWhitelist: [],
   },
 });
@@ -152,6 +155,7 @@ const formatUploadedRow = (row: Record<string, unknown>): ParsedInviteRow => ({
   personalEmail: findRowValue(row, ["personalEmail", "PersonalEmail", "personal email"]),
   primaryPhone: findRowValue(row, ["primaryPhone", "PrimaryPhone", "phone", "primary phone"]),
   secondaryPhone: findRowValue(row, ["secondaryPhone", "SecondaryPhone", "secondary phone"]),
+  googleId: findRowValue(row, ["googleId", "GoogleId", "google id", "google_id"]),
   password: findRowValue(row, ["password", "Password"]),
   confirmPassword: findRowValue(row, ["confirmPassword", "ConfirmPassword", "confirm password"]),
   question1: findRowValue(row, ["question1", "securityQuestion1", "question 1"]),
@@ -439,6 +443,15 @@ export function PlatformAdminInviteForm() {
               <input type="tel" {...register("secondaryPhone")} className="neumorphic-input w-full px-4 py-3 text-sm" />
               <span className="text-xs text-red-500">{errors.secondaryPhone?.message as string}</span>
             </label>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+              <span>Google ID</span>
+              <input type="text" {...register("googleId")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <span className="text-xs text-red-500">{errors.googleId?.message as string}</span>
+            </label>
+            <div />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

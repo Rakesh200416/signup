@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,6 +19,8 @@ const verifySchema = z.object({
 type VerifyForm = z.infer<typeof verifySchema>;
 
 export default function VerifyOtpPage() {
+  const router = useRouter();
+  const [verified, setVerified] = useState(false);
   const { register, handleSubmit, formState } = useForm<VerifyForm>({
     resolver: zodResolver(verifySchema),
     defaultValues: { email: "", otpCode: "" },
@@ -25,6 +29,7 @@ export default function VerifyOtpPage() {
   const onSubmit = async (values: VerifyForm) => {
     try {
       await api.post("/auth/verify-otp", values);
+      setVerified(true);
       toast.success("OTP verified successfully. You may now login.");
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Verification failed.");
@@ -51,6 +56,12 @@ export default function VerifyOtpPage() {
               </label>
               <NeumorphicButton type="submit" className="w-full">Verify OTP</NeumorphicButton>
             </form>
+            {verified && (
+              <div className="mt-5 grid gap-3">
+                <p className="text-sm text-[#334155] dark:text-[#cbd5e1]">OTP verified successfully.</p>
+                <NeumorphicButton type="button" className="w-full" onClick={() => router.push("/")}>Go to Sign in</NeumorphicButton>
+              </div>
+            )}
           </NeumorphicCard>
         </div>
       </div>

@@ -100,4 +100,34 @@ export class SecurityService {
 
     return matches >= 2;
   }
+
+  async verifySecurityAnswers(userId: string, answers: string[]) {
+    const security = await this.prisma.security.findUnique({ where: { userId } });
+    if (!security) {
+      return false;
+    }
+
+    const questions = security.securityQuestions as Array<{ question: string; answerHash: string }>;
+    let matches = 0;
+
+    for (const answer of answers) {
+      const normalizedAnswer = answer.trim();
+      if (!normalizedAnswer) {
+        continue;
+      }
+
+      for (const stored of questions) {
+        if (await argonVerify(stored.answerHash, normalizedAnswer)) {
+          matches += 1;
+          break;
+        }
+      }
+
+      if (matches >= 2) {
+        return true;
+      }
+    }
+
+    return matches >= 2;
+  }
 }

@@ -26,6 +26,7 @@ export class UserService {
       phonePrimary: string;
       phoneSecondary?: string;
       backupEmail?: string;
+      googleId?: string | null;
       ipWhitelist?: string[];
     };
     securityQuestions: Array<{ question: string; answerHash: string }>;
@@ -46,6 +47,7 @@ export class UserService {
             phonePrimary: data.profile.phonePrimary,
             phoneSecondary: data.profile.phoneSecondary ?? null,
             backupEmail: data.profile.backupEmail ?? null,
+            googleId: data.profile.googleId ?? null,
             ipWhitelist: data.profile.ipWhitelist ?? [],
           },
         },
@@ -84,6 +86,7 @@ export class UserService {
       phonePrimary: string;
       phoneSecondary?: string;
       backupEmail?: string;
+      googleId?: string | null;
       ipWhitelist?: string[];
     };
     securityQuestions: Array<{ question: string; answerHash: string }>;
@@ -105,6 +108,7 @@ export class UserService {
             phonePrimary: data.profile.phonePrimary,
             phoneSecondary: data.profile.phoneSecondary ?? null,
             backupEmail: data.profile.backupEmail ?? null,
+            googleId: data.profile.googleId ?? null,
             ipWhitelist: data.profile.ipWhitelist ?? [],
           },
         },

@@ -17,6 +17,43 @@ export class OtpService {
   }
 
   async createOtpForUser(userId: string, method: OtpDeliveryMethod, destination: string, expiresInMinutes = 10) {
+    const verification = await this.prisma.verification.upsert({
+      where: { userId },
+      create: {
+        userId,
+        emailOTP: null,
+        phoneOTP: null,
+        otpExpiry: null,
+        failedAttempts: 0,
+        otpRequestCount: 0,
+        otpRequestBlockedUntil: null,
+      },
+      update: {},
+    });
+
+    const now = new Date();
+    const updateData: any = {};
+    let currentCount = verification.otpRequestCount ?? 0;
+
+    if (verification.otpRequestBlockedUntil && verification.otpRequestBlockedUntil > now) {
+      throw new ForbiddenException("OTP generation is temporarily limited for 5 hours. Use fallback authentication methods.");
+    }
+
+    if (verification.otpRequestBlockedUntil && verification.otpRequestBlockedUntil <= now) {
+      currentCount = 0;
+      updateData.otpRequestBlockedUntil = null;
+    }
+
+    const nextRequestCount = currentCount + 1;
+    updateData.otpRequestCount = nextRequestCount;
+
+    if (nextRequestCount >= 5) {
+      updateData.otpRequestBlockedUntil = new Date(Date.now() + 5 * 60 * 60 * 1000);
+    }
+
+    await this.prisma.verification.update({ where: { userId }, data: updateData });
+
+    const limitReached = nextRequestCount >= 5;
     const code = this.generateNumericCode();
     const codeHash = await this.hashCode(code);
     const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
@@ -31,22 +68,7 @@ export class OtpService {
       },
     });
 
-    await this.prisma.verification.upsert({
-      where: { userId },
-      create: {
-        userId,
-        emailOTP: null,
-        phoneOTP: null,
-        otpExpiry: null,
-        failedAttempts: 0,
-      },
-      update: {
-        failedAttempts: 0,
-        lockedUntil: null,
-      },
-    });
-
-    return { code, expiresAt };
+    return { code, expiresAt, limitReached };
   }
 
   async validateOtp(userId: string, code: string, consume = true) {
@@ -54,10 +76,6 @@ export class OtpService {
     const normalizedCode = code?.trim();
     if (!verification) {
       throw new BadRequestException("OTP record not found.");
-    }
-
-    if (verification.lockedUntil && verification.lockedUntil > new Date()) {
-      throw new ForbiddenException("OTP flow locked due to repeated failures.");
     }
 
     const otpRecord = await this.prisma.otpCode.findFirst({
@@ -78,6 +96,13 @@ export class OtpService {
       throw new BadRequestException("OTP did not match.");
     }
 
+    const resetData: any = {
+      failedAttempts: 0,
+      lockedUntil: null,
+      otpRequestCount: 0,
+      otpRequestBlockedUntil: null,
+    };
+
     if (consume) {
       await this.prisma.$transaction([
         this.prisma.otpCode.update({
@@ -86,13 +111,13 @@ export class OtpService {
         }),
         this.prisma.verification.update({
           where: { userId },
-          data: { failedAttempts: 0, lockedUntil: null },
+          data: resetData,
         }),
       ]);
     } else {
       await this.prisma.verification.update({
         where: { userId },
-        data: { failedAttempts: 0, lockedUntil: null },
+        data: resetData,
       });
     }
 
@@ -107,9 +132,6 @@ export class OtpService {
 
     const attempts = verification.failedAttempts + 1;
     const data: any = { failedAttempts: attempts };
-    if (attempts >= 5) {
-      data.lockedUntil = new Date(Date.now() + 30 * 60 * 1000);
-    }
 
     await this.prisma.verification.update({ where: { userId }, data });
   }

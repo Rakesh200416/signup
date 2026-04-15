@@ -44,6 +44,7 @@ model SuperAdminProfile {
   phonePrimary   String
   phoneSecondary String?
   backupEmail    String?
+  googleId       String?
   ipWhitelist    Json?
 }
 
@@ -57,14 +58,16 @@ model Security {
 }
 
 model Verification {
-  id             String    @id @default(uuid())
-  user           User      @relation(fields: [userId], references: [id])
-  userId         String    @unique
-  emailOTP       String?
-  phoneOTP       String?
-  otpExpiry      DateTime?
-  failedAttempts Int       @default(0)
-  lockedUntil    DateTime?
+  id                      String    @id @default(uuid())
+  user                    User      @relation(fields: [userId], references: [id])
+  userId                  String    @unique
+  emailOTP                String?
+  phoneOTP                String?
+  otpExpiry               DateTime?
+  failedAttempts          Int       @default(0)
+  otpRequestCount         Int       @default(0)
+  otpRequestBlockedUntil  DateTime?
+  lockedUntil             DateTime?
 }
 
 model RefreshToken {

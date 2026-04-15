@@ -42,6 +42,7 @@ export const signupSchema = z.object({
     magicLinkEmail: z.string().email().optional(),
     backupCodes: z.array(z.string()).optional(),
     ipWhitelist: z.array(z.string()).optional(),
+    googleId: z.string().min(3).optional(),
   }),
 });
 
