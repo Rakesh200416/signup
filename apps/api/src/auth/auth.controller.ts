@@ -17,6 +17,7 @@ import { loginSchema, LoginDto } from "./dto/login.dto";
 import { requestOtpSchema, RequestOtpDto } from "./dto/request-otp.dto";
 import { signupSchema, SignupDto } from "./dto/signup.dto";
 import { validateMagicLinkSchema, ValidateMagicLinkDto } from "./dto/validate-magic-link.dto";
+import { validatePasswordSchema, ValidatePasswordDto } from "./dto/validate-password.dto";
 import { verifyOtpSchema, VerifyOtpDto } from "./dto/verify-otp.dto";
 import { setup2FASchema, Setup2FADto } from "./dto/setup-2fa.dto";
 import { recoverSchema, RecoverDto } from "./dto/recover.dto";
@@ -46,6 +47,12 @@ export class AuthController {
   async login(@Body() loginDto: LoginDto, @Req() req: Request) {
     const ip = req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
     return this.authService.login(loginDto, ip);
+  }
+
+  @Post("validate-password")
+  @UsePipes(new ZodValidationPipe(validatePasswordSchema))
+  async validatePassword(@Body() validatePasswordDto: ValidatePasswordDto) {
+    return this.authService.validatePassword(validatePasswordDto.email, validatePasswordDto.password);
   }
 
   @Post("invite-platform-admin")

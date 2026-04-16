@@ -74,6 +74,22 @@ export class SecurityService {
     return false;
   }
 
+  async verifyRecoveryCode(userId: string, recoveryCode: string) {
+    const existingCodes = await this.prisma.recoveryCode.findMany({
+      where: { userId, isUsed: false },
+    });
+    for (const record of existingCodes) {
+      if (await argonVerify(record.codeHash, recoveryCode)) {
+        await this.prisma.recoveryCode.update({
+          where: { id: record.id },
+          data: { isUsed: true },
+        });
+        return true;
+      }
+    }
+    return false;
+  }
+
   async verifySecurityQuestions(
     userId: string,
     submittedAnswers: { question: string; answer: string }[],

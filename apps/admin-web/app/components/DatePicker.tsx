@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type DatePickerProps = {
@@ -65,7 +66,14 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
     const year = Number.isNaN(target.getTime()) ? new Date().getFullYear() : target.getFullYear();
     return Math.floor(year / 12) * 12;
   });
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [panelRect, setPanelRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (value) {
@@ -83,14 +91,39 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
   }, [visibleDate, viewMode]);
 
   useEffect(() => {
-    const handleOutside = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+    const updatePanelPosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPanelRect({
+        left: rect.left + window.scrollX,
+        top: rect.bottom + window.scrollY + 8,
+        width: Math.min(rect.width, 280),
+      });
     };
+
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setIsOpen(false);
+    };
+
+    const handleScroll = () => updatePanelPosition();
+    const handleResize = () => updatePanelPosition();
+
     document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, []);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleResize);
+
+    if (isOpen) {
+      updatePanelPosition();
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [isOpen]);
 
   const selectedDate = useMemo(() => {
     if (!value) return null;
@@ -146,39 +179,50 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
   };
 
   return (
-    <div ref={wrapperRef} className={`relative ${className}`}>
+    <div className={`relative ${className}`}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setIsOpen((open) => !open)}
-        className="neumorphic-input flex w-full items-center justify-between px-4 py-3 text-sm text-left text-[#0f172a] dark:text-[#f8fafc]"
+        className="neumorphic-input flex w-full items-center justify-between px-4 py-3 text-sm text-left text-[#0f172a]"
       >
-        <span className={`${value ? "text-[#0f172a] dark:text-[#f8fafc]" : "text-[#64748b] dark:text-[#94a3b8]"}`}>
+        <span className={`${value ? "text-[#0f172a]" : "text-[#64748b]"}`}>
           {formatLabel(value) || placeholder}
         </span>
-        <span className="text-[#475569] dark:text-[#cbd5e1]">📅</span>
+        <span className="text-[#475569]">📅</span>
       </button>
 
-      {isOpen && (
-        <div className="absolute left-0 z-50 mt-2 w-[320px] overflow-hidden rounded-[1.75rem] border border-white/80 bg-[#eef6ff] shadow-[24px_24px_60px_rgba(166,184,220,0.28),-24px_-24px_60px_rgba(255,255,255,0.95)] dark:border-white/10 dark:bg-[#17202c] dark:shadow-[24px_24px_60px_rgba(0,0,0,0.35),-24px_-24px_60px_rgba(255,255,255,0.06)]">
-          <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold text-[#0f172a] dark:text-[#f8fafc]">
+      {mounted && isOpen && panelRect && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: "absolute",
+            left: panelRect.left,
+            top: panelRect.top,
+            width: panelRect.width,
+            zIndex: 9999,
+          }}
+          className="overflow-hidden rounded-[28px] bg-[#e0e5ec] shadow-[6px_6px_12px_#b8bec9,-6px_-6px_12px_#ffffff] neomorphic-dropdown-panel"
+        >
+          <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold text-[#0f172a]">
             <button
               type="button"
               onClick={handlePrev}
-              className="rounded-full p-2 hover:bg-[#dbeafe] dark:hover:bg-[#1f2937]"
+              className="neumorphic-button rounded-full px-3 py-2 text-base"
             >
               ‹
             </button>
             <button
               type="button"
               onClick={() => setViewMode((mode) => (mode === "day" ? "year" : "year"))}
-              className="rounded-full px-3 py-2 hover:bg-[#dbeafe] dark:hover:bg-[#1f2937]"
+              className="neumorphic-button rounded-full px-4 py-2 text-sm"
             >
               {headerLabel}
             </button>
             <button
               type="button"
               onClick={handleNext}
-              className="rounded-full p-2 hover:bg-[#dbeafe] dark:hover:bg-[#1f2937]"
+              className="neumorphic-button rounded-full px-3 py-2 text-base"
             >
               ›
             </button>
@@ -193,7 +237,7 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-1 px-4 pb-4 text-sm">
+              <div className="grid grid-cols-7 gap-2 px-4 pb-4 text-sm">
                 {days.map(({ date, inMonth }) => {
                   const iso = formatIso(date);
                   const isSelected = selectedDate ? iso === formatIso(selectedDate) : false;
@@ -202,7 +246,7 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
                       key={iso}
                       type="button"
                       onClick={() => handleSelectDate(date)}
-                      className={`rounded-2xl px-2 py-2 transition ${inMonth ? "" : "text-[#94a3b8] dark:text-[#475569]"} ${isSelected ? "bg-[#2563eb] text-white" : "hover:bg-[#dbeafe] dark:hover:bg-[#1f2937]"}`}
+                      className={`rounded-[18px] px-2 py-2 text-sm transition ${inMonth ? "bg-[#e0e5ec] text-[#0f172a]" : "text-[#94a3b8]"} ${isSelected ? "bg-[#2563eb] text-white shadow-[inset_4px_4px_8px_#1d4ed8]" : "hover:bg-[#dbeafe]"}`}
                     >
                       {date.getDate()}
                     </button>
@@ -219,7 +263,7 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
                   key={month}
                   type="button"
                   onClick={() => handleSelectMonth(index)}
-                  className="rounded-2xl px-3 py-3 text-left text-sm text-[#0f172a] dark:text-[#f8fafc] hover:bg-[#dbeafe] dark:hover:bg-[#1f2937]"
+                  className="neumorphic-dropdown-option rounded-[18px] px-3 py-3 text-left text-sm text-[#0f172a] hover:bg-[#dbeafe]"
                 >
                   {month}
                 </button>
@@ -234,14 +278,15 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
                   key={year}
                   type="button"
                   onClick={() => handleSelectYear(year)}
-                  className="rounded-2xl px-3 py-3 text-left text-sm text-[#0f172a] dark:text-[#f8fafc] hover:bg-[#dbeafe] dark:hover:bg-[#1f2937]"
+                  className="neumorphic-dropdown-option rounded-[18px] px-3 py-3 text-left text-sm text-[#0f172a] hover:bg-[#dbeafe]"
                 >
                   {year}
                 </button>
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

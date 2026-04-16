@@ -24,11 +24,12 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      className={`inline-flex items-center gap-2 rounded-full border border-white/70 px-4 py-2 text-sm shadow-[5px_5px_10px_#c1c7d0,-5px_-5px_10px_#ffffff] transition-all duration-200 hover:-translate-y-0.5 ${enabled ? "bg-[#111827] text-white" : "bg-[#e6ebf2] text-[#111827]"}`}
+      className={`inline-flex items-center justify-between rounded-full border border-white/80 bg-[#e6ebf2] px-4 py-2 shadow-[8px_8px_18px_rgba(200,201,209,0.35),-8px_-8px_18px_rgba(255,255,255,0.95)] transition duration-200 ${enabled ? "bg-[#1f2937] text-white" : "bg-[#e6ebf2] text-[#111827]"}`}
+      aria-pressed={enabled}
     >
-      <span>{enabled ? "Light mode" : "Dark mode"}</span>
-      <span className="inline-flex h-6 w-10 items-center rounded-full bg-[#d9dfea] p-1 transition-all">
-        <span className={`h-4 w-4 rounded-full bg-[#1f2937] transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
+      <span className="text-sm font-medium">{enabled ? "Dark mode" : "Light mode"}</span>
+      <span className={`relative inline-flex h-9 w-16 items-center rounded-full p-1 shadow-[inset_2px_2px_6px_rgba(163,177,198,0.25),inset_-2px_-2px_6px_rgba(255,255,255,0.95)] transition-colors duration-200 ${enabled ? "bg-[#2f3443]" : "bg-[#d9dfea]"}`}>
+        <span className={`block h-7 w-7 rounded-full shadow-[4px_4px_10px_rgba(163,177,198,0.32),-4px_-4px_10px_rgba(255,255,255,0.9)] transition-transform duration-200 ${enabled ? "translate-x-7 bg-[#94a3ff]" : "translate-x-0 bg-white"}`} />
       </span>
     </button>
   );

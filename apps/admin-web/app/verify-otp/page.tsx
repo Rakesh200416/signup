@@ -21,7 +21,12 @@ type VerifyForm = z.infer<typeof verifySchema>;
 export default function VerifyOtpPage() {
   const router = useRouter();
   const [verified, setVerified] = useState(false);
-  const { register, handleSubmit, formState } = useForm<VerifyForm>({
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<VerifyForm>({
     resolver: zodResolver(verifySchema),
     defaultValues: { email: "", otpCode: "" },
   });
@@ -52,7 +57,17 @@ export default function VerifyOtpPage() {
               </label>
               <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <span>OTP code</span>
-                <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("otpCode")} />
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  className="neumorphic-input h-14 w-full rounded-[18px] border-2 border-slate-300 bg-white px-4 text-center text-xl font-semibold text-[#273457] outline-none shadow-sm transition duration-200 focus:border-[#8ec9ff] focus:ring-2 focus:ring-[#8ec9ff]/30"
+                  {...register("otpCode")}
+                  placeholder="Enter 6-digit code"
+                />
+                {errors.otpCode?.message ? <p className="text-xs text-rose-500">{errors.otpCode.message}</p> : null}
               </label>
               <NeumorphicButton type="submit" className="w-full">Verify OTP</NeumorphicButton>
             </form>

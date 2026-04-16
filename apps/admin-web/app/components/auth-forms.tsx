@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "react-hot-toast";
 import api from "../lib/api";
+import { Mail, Lock, Phone, User, ShieldCheck } from "lucide-react";
 import { NeumorphicButton } from "./NeumorphicButton";
 import { NeumorphicCard } from "./NeumorphicCard";
 import { StepProgress } from "./StepProgress";
-import { ThemeToggle } from "./ThemeToggle";
 import { DatePicker } from "./DatePicker";
+import { DropdownSelect } from "./DropdownSelect";
 import { z } from "zod";
 
 const getToastMessage = (error: unknown, fallback: string) => {
@@ -111,6 +112,9 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
   const [otpRequestCount, setOtpRequestCount] = useState(0);
   const [otpRequestBlocked, setOtpRequestBlocked] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState<"totp" | "security" | "googleId">("totp");
+  const [passwordStatus, setPasswordStatus] = useState<"idle" | "valid" | "invalid">("idle");
+  const [passwordValidationMessage, setPasswordValidationMessage] = useState("");
   const [totpInput, setTotpInput] = useState("");
   const [securityAnswers, setSecurityAnswers] = useState(["", "", ""]);
   const [googleIdInput, setGoogleIdInput] = useState("");
@@ -150,6 +154,45 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
   const fetchCsrfToken = async () => {
     const response = await api.get("/auth/csrf-token");
     return response.data?.csrfToken;
+  };
+
+  const validatePassword = async (emailValue: string, passwordValue: string) => {
+    if (!emailValue?.trim() || !passwordValue?.trim() || passwordValue.trim().length < 8) {
+      setPasswordStatus("idle");
+      setPasswordValidationMessage("");
+      return;
+    }
+
+    try {
+      const csrfToken = await fetchCsrfToken();
+      const response = await api.post(
+        "/auth/validate-password",
+        { email: emailValue.trim(), password: passwordValue.trim() },
+        { headers: { "X-CSRF-Token": csrfToken } },
+      );
+      if (response.data?.valid) {
+        setPasswordStatus("valid");
+        setPasswordValidationMessage("Password is correct.");
+        toast.success("Password is correct.");
+      } else {
+        setPasswordStatus("invalid");
+        setPasswordValidationMessage("Password does not match.");
+        toast.error("Password does not match.");
+      }
+    } catch (error: any) {
+      setPasswordStatus("invalid");
+      setPasswordValidationMessage(getToastMessage(error, "Password validation failed."));
+      toast.error(getToastMessage(error, "Password validation failed."));
+    }
+  };
+
+  const chooseOtherMethod = async () => {
+    setShowFallback(true);
+    setAuthStage(selectedMethod);
+    setOtpRequestBlocked(true);
+    if (selectedMethod === "totp") {
+      await initiateTotpSetup();
+    }
   };
 
   const requestOtp = async () => {
@@ -372,18 +415,39 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
           <p className="text-sm uppercase tracking-[0.3em] text-[#475569] dark:text-[#94a3b8]">Sign in</p>
           <h1 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">{pageTitle}</h1>
         </div>
-        <ThemeToggle />
       </div>
       <form className="grid gap-4" onSubmit={handleSubmit(completeSignIn)}>
         <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
           <span>Official email</span>
-          <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("email")} />
+          <input
+            placeholder="admin@example.com"
+            className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+            {...register("email")}
+          />
           <span className="text-xs text-red-500">{errors.email?.message as string}</span>
         </label>
         <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
           <span>Password</span>
-          <input type="password" className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("password")} />
-          <span className="text-xs text-red-500">{errors.password?.message as string}</span>
+          <input
+            type="password"
+            placeholder="Your strong password"
+            className={
+              "neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 " +
+              (passwordStatus === "valid"
+                ? "border-2 border-emerald-500 ring-emerald-200"
+                : passwordStatus === "invalid"
+                ? "border-2 border-rose-500 ring-rose-200"
+                : "focus:ring-[#8ec9ff]")
+            }
+            {...register("password")}
+            onBlur={() => validatePassword(email, password)}
+          />
+          <span className={
+            "text-xs " +
+            (passwordStatus === "valid" ? "text-emerald-600" : passwordStatus === "invalid" ? "text-rose-500" : "text-red-500")
+          }>
+            {passwordValidationMessage || (errors.password?.message as string) || ""}
+          </span>
         </label>
         <div className="neumorphic-surface p-5">
           <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Delivery method</p>
@@ -413,6 +477,25 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
           </NeumorphicButton>
         </div>
 
+        <div className="neumorphic-surface p-5">
+          <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Other sign-in methods</p>
+          <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Choose an alternate verification option if OTP is not working.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <select
+              value={selectedMethod}
+              onChange={(event) => setSelectedMethod(event.target.value as "totp" | "security" | "googleId")}
+              className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+            >
+              <option value="totp">Google Authenticator</option>
+              <option value="security">Security questions</option>
+              <option value="googleId">Google ID</option>
+            </select>
+            <NeumorphicButton type="button" className="w-full" onClick={chooseOtherMethod}>
+              Use selected method
+            </NeumorphicButton>
+          </div>
+        </div>
+
         {(otpRequestBlocked || failedOtpAttempts >= 5) && !showFallback ? (
           <div className="mt-5 rounded-3xl border border-amber-300/80 bg-amber-50 p-4 text-sm text-[#92400e] dark:border-amber-400/30 dark:bg-[#2b1f0f] dark:text-[#f8d19b]">
             <p className="font-semibold">OTP generation is temporarily limited.</p>
@@ -428,7 +511,11 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
         <div className="neumorphic-surface p-5">
           <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
             <span>OTP code</span>
-            <input className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]" {...register("otpCode")} />
+            <input
+              placeholder="123456"
+              className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              {...register("otpCode")}
+            />
             <span className="text-xs text-red-500">{errors.otpCode?.message as string}</span>
           </label>
           <div className="mt-4">
@@ -479,7 +566,7 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
             <input
               value={totpInput}
               onChange={(event) => setTotpInput(event.target.value)}
-              placeholder="Enter authenticator code"
+              placeholder="123456"
               className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -529,7 +616,7 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
             <input
               value={googleIdInput}
               onChange={(event) => setGoogleIdInput(event.target.value)}
-              placeholder="Enter Google ID"
+              placeholder="your.google.id@gmail.com"
               className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -561,14 +648,14 @@ export function LoginForm({ initialEmail = "", redirectTo = "/dashboard", pageTi
         )}
 
         {authStage === "govtId" && showFallback && (
-          <div className="mt-6 rounded-3xl border border-white/90 bg-[#f8fafc] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff] dark:border-slate-700 dark:bg-[#111827] dark:text-[#cbd5e1]">
-            <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Government ID verification</p>
-            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Enter the government ID reference used for your account.</p>
+          <div className="mt-6 neumorphic-surface rounded-[28px] bg-[#e0e5ec] p-4">
+            <p className="text-sm font-semibold text-[#111827]">Government ID verification</p>
+            <p className="mt-2 text-sm text-[#475569]">Enter the government ID reference used for your account.</p>
             <input
               value={govtIdInput}
               onChange={(event) => setGovtIdInput(event.target.value)}
               placeholder="Enter government ID"
-              className="mt-4 neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="mt-4 neumorphic-input w-full px-4 py-3 text-sm"
             />
             <NeumorphicButton type="button" className="mt-4 w-full" onClick={verifyGovtId} disabled={isVerifyingGovtId}>
               Verify government ID
@@ -597,6 +684,8 @@ export function SignupWizard() {
   const [isVerifyingTotp, setIsVerifyingTotp] = useState(false);
   const [govtIdFile, setGovtIdFile] = useState<File | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [captchaQuestion, setCaptchaQuestion] = useState("");
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaInput, setCaptchaInput] = useState("");
@@ -635,6 +724,21 @@ export function SignupWizard() {
     },
   });
   const { register: registerSecurity, handleSubmit: handleSecuritySubmit, formState: { errors: securityErrors } } = securityForm;
+  const securityPassword = securityForm.watch("password") || "";
+  const securityPasswordRules = [
+    { id: "length", label: "At least 12 characters", isValid: securityPassword.length >= 12 },
+    { id: "uppercase", label: "At least 1 uppercase letter", isValid: /[A-Z]/.test(securityPassword) },
+    { id: "lowercase", label: "At least 1 lowercase letter", isValid: /[a-z]/.test(securityPassword) },
+    { id: "digit", label: "At least 1 numeric digit", isValid: /\d/.test(securityPassword) },
+    { id: "special", label: "At least 1 special character", isValid: /[^A-Za-z0-9]/.test(securityPassword) },
+  ];
+  const securityPasswordValidCount = securityPasswordRules.filter((rule) => rule.isValid).length;
+  const securityPasswordStrength =
+    securityPasswordValidCount === 5
+      ? { label: "Strong", emoji: "🟢", tone: "bg-[#e6f6e6] text-[#2f6f35] border-[#bceab3]" }
+      : securityPasswordValidCount >= 3
+      ? { label: "Medium", emoji: "🟡", tone: "bg-[#fff7df] text-[#a8791f] border-[#f4dd8d]" }
+      : { label: "Weak", emoji: "🔴", tone: "bg-[#fbeaea] text-[#9b3e42] border-[#e9c3c5]" };
 
   const recoveryForm = useForm<z.infer<typeof recoverySchema>>({
     resolver: zodResolver(recoverySchema),
@@ -798,24 +902,23 @@ export function SignupWizard() {
   };
 
   return (
-    <NeumorphicCard className="max-w-3xl w-full force-white-text">
+    <NeumorphicCard className="max-w-3xl w-full rounded-[28px]">
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-[#4b5563]">Super Admin onboarding</p>
-          <h2 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">Secure multi-step signup</h2>
+          <p className="text-sm uppercase tracking-[0.35em] text-[#5c6d94]">Super Admin Signup</p>
+          <h2 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">Create your account to access the admin workspace</h2>
         </div>
-        <ThemeToggle />
       </div>
       <StepProgress steps={steps} current={step} />
 
       {signupComplete ? (
         <div className="grid gap-6">
-          <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-8 shadow-[inset_8px_8px_16px_#c1c7d0,inset_-8px_-8px_16px_#ffffff]">
-            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Account created successfully</h3>
-            <p className="mt-3 text-sm text-[#475569] dark:text-[#94a3b8]">
+          <div className="neumorphic-surface rounded-[28px] bg-[#e0e5ec] p-8">
+            <h3 className="text-2xl font-semibold text-[#111827]">Account created successfully</h3>
+            <p className="mt-3 text-sm text-[#475569]">
               Your account has been created for <strong>{createdEmail}</strong>. An OTP has been sent to your official email and phone if configured.
             </p>
-            <p className="mt-4 text-sm text-[#334155] dark:text-[#cbd5e1]">
+            <p className="mt-4 text-sm text-[#334155]">
               Please verify your OTP on the verification page before signing in.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -829,80 +932,102 @@ export function SignupWizard() {
           {step === 0 && (
             <form onSubmit={identityForm.handleSubmit((data) => goNext("identity", data))} className="grid gap-4">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Basic info</h3>
-            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Start with your identity details before verification.</p>
+            <h3 className="text-2xl font-semibold text-[#111827]">Basic info</h3>
+            <p className="mt-2 text-sm text-[#475569]">Start with your identity details before verification.</p>
           </div>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Full name</span>
-            <input
-              type="text"
-              {...registerIdentity("fullName")}
-              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-              required
-            />
+            <div className="neumorphic-field-group">
+              <span className="neumorphic-icon-box">
+                <User className="h-4 w-4" />
+              </span>
+              <input
+                type="text"
+                {...registerIdentity("fullName")}
+                className="neumorphic-input w-full px-4 py-3 text-sm"
+                placeholder="Enter your full name"
+                required
+              />
+            </div>
             <span className="text-xs text-red-500">{identityErrors.fullName?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Date of birth</span>
-            <Controller
-              control={identityControl}
-              name="dob"
-              render={({ field }) => (
-                <DatePicker
-                  value={field.value}
-                  onChange={field.onChange}
-                  placeholder="Choose birth date"
-                  className="w-full"
-                />
-              )}
-            />
+            <div className="neumorphic-field-group">
+              <span className="neumorphic-icon-box">
+                <ShieldCheck className="h-4 w-4" />
+              </span>
+              <DatePicker
+                value={identityForm.watch("dob")}
+                onChange={(value) => identityForm.setValue("dob", value)}
+                placeholder="Choose birth date"
+                className="w-full"
+              />
+            </div>
             <span className="text-xs text-red-500">{identityErrors.dob?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Government ID type</span>
-            <div className="relative">
-              <select
-                {...registerIdentity("govtIdType")}
-                className="w-full appearance-none rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 pr-10 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-                required
-              >
-                <option value="">Select an ID type</option>
-                {govtIdOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#64748b] dark:text-[#94a3b8]">▾</span>
+            <div className="neumorphic-field-group">
+              <span className="neumorphic-icon-box">
+                <ShieldCheck className="h-4 w-4" />
+              </span>
+              <DropdownSelect
+                value={identityForm.watch("govtIdType")}
+                options={govtIdOptions}
+                placeholder="Select an ID type"
+                onChange={(value) => identityForm.setValue("govtIdType", value)}
+              />
             </div>
             <span className="text-xs text-red-500">{identityErrors.govtIdType?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Government ID upload</span>
-            <div className="relative">
+            <div className="neumorphic-file-field">
+              <span className="neumorphic-icon-box">
+                <User className="h-4 w-4" />
+              </span>
+              <div className="flex w-full items-center justify-between gap-3">
+                <div className="min-w-0 text-sm text-[#475569]">{govtIdFile ? govtIdFile.name : "No file selected"}</div>
+                <button type="button" className="neumorphic-button animate-up-1 text-sm px-4 py-2" onClick={() => document.getElementById("govt-id-upload")?.click()}>
+                  Browse
+                </button>
+              </div>
               <input
+                id="govt-id-upload"
                 type="file"
                 accept="image/*,application/pdf"
                 onChange={(event) => setGovtIdFile(event.target.files?.[0] ?? null)}
-                className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 pr-16 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
                 required
               />
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-[#e2e8f0] px-3 py-1 text-xs text-[#334155] shadow-[inset_2px_2px_6px_rgba(0,0,0,0.08)] dark:bg-[#1f2937] dark:text-[#cbd5e1]">
-                📎 Browse
-              </span>
             </div>
-            {govtIdFile && <p className="text-xs text-[#334155] dark:text-[#cbd5e1]">Selected file: {govtIdFile.name}</p>}
+            {govtIdFile && <p className="text-xs text-[#334155]">Selected file: {govtIdFile.name}</p>}
           </label>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Upload profile photo</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
-              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-            />
-            {photoFile && <p className="text-xs text-[#334155] dark:text-[#cbd5e1]">Selected file: {photoFile.name}</p>}
+            <div className="neumorphic-file-field">
+              <span className="neumorphic-icon-box">
+                <User className="h-4 w-4" />
+              </span>
+              <div className="flex w-full items-center justify-between gap-3">
+                <div className="min-w-0 text-sm text-[#475569]">{photoFile ? photoFile.name : "No file selected"}</div>
+                <button type="button" className="neumorphic-button animate-up-1 text-sm px-4 py-2" onClick={() => document.getElementById("profile-photo-upload")?.click()}>
+                  Browse
+                </button>
+              </div>
+              <input
+                id="profile-photo-upload"
+                type="file"
+                accept="image/*"
+                onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
+                className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
+              />
+            </div>
+            {photoFile && <p className="text-xs text-[#334155]">Selected file: {photoFile.name}</p>}
           </label>
           <div className="flex items-center justify-between gap-4">
-            <button type="button" disabled className="cursor-not-allowed rounded-3xl bg-[#e6ebf2] dark:bg-[#1f2937] px-6 py-3 text-sm text-[#94a3b8] shadow-[inset_4px_4px_10px_#c1c7d0]">Back</button>
+            <button type="button" disabled className="w-full neumorphic-button animate-up-1 opacity-70 cursor-not-allowed px-6 py-3 text-sm font-semibold text-[#94a3b8]">Back</button>
             <NeumorphicButton type="submit" className="w-full">Continue</NeumorphicButton>
           </div>
         </form>
@@ -915,34 +1040,40 @@ export function SignupWizard() {
             <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Enter email and phone details for mandatory OTP verification.</p>
           </div>
           {[
-            { label: "Official email", name: "officialEmail", type: "email" },
-            { label: "Personal email", name: "personalEmail", type: "email" },
-            { label: "Primary phone", name: "primaryPhone", type: "tel" },
-            { label: "Secondary phone", name: "secondaryPhone", type: "tel" },
+            { label: "Official email", name: "officialEmail", type: "email", Icon: Mail },
+            { label: "Personal email", name: "personalEmail", type: "email", Icon: Mail },
+            { label: "Primary phone", name: "primaryPhone", type: "tel", Icon: Phone },
+            { label: "Secondary phone", name: "secondaryPhone", type: "tel", Icon: Phone },
           ].map((field) => (
             <label key={field.name} className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>{field.label}</span>
-              <input
-                type={field.type}
-                {...registerContact(field.name as any)}
-                className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-                required={field.name !== "secondaryPhone"}
-              />
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <field.Icon className="h-4 w-4" />
+                </span>
+                <input
+                  type={field.type}
+                  {...registerContact(field.name as any)}
+                  className="neumorphic-input w-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                  placeholder={`Enter ${field.label.toLowerCase()}`}
+                  required={field.name !== "secondaryPhone"}
+                />
+              </div>
               <span className="text-xs text-red-500">{(contactErrors as any)[field.name]?.message as string}</span>
             </label>
           ))}
-          <div className="grid gap-4 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+          <div className="neumorphic-surface grid gap-4 rounded-[28px] p-4">
             <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
-                <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Email OTP</p>
-                <p className="mt-1 text-sm text-[#64748b] dark:text-[#94a3b8]">OTP codes are generated automatically when the account is created. Verify them on the OTP confirmation page.</p>
+                <p className="text-sm font-medium text-[#334155]">Email OTP</p>
+                <p className="mt-1 text-sm text-[#64748b]">OTP codes are generated automatically when the account is created. Verify them on the OTP confirmation page.</p>
               </div>
               <NeumorphicButton type="button" className="w-full cursor-not-allowed opacity-70" disabled>OTP after signup</NeumorphicButton>
             </div>
             <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
-                <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Phone OTP</p>
-                <p className="mt-1 text-sm text-[#64748b] dark:text-[#94a3b8]">A code is delivered to your primary phone after signup is complete.</p>
+                <p className="text-sm font-medium text-[#334155]">Phone OTP</p>
+                <p className="mt-1 text-sm text-[#64748b]">A code is delivered to your primary phone after signup is complete.</p>
               </div>
               <NeumorphicButton type="button" className="w-full cursor-not-allowed opacity-70" disabled>OTP after signup</NeumorphicButton>
             </div>
@@ -957,52 +1088,120 @@ export function SignupWizard() {
       {step === 2 && (
         <form onSubmit={handleSecuritySubmit((data) => goNext("security", data))} className="grid gap-4">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Security</h3>
-            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Use a strong password and recovery questions.</p>
+            <h3 className="text-2xl font-semibold text-[#111827]">Security</h3>
+            <p className="mt-2 text-sm text-[#475569]">Use a strong password and recovery questions.</p>
           </div>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Password</span>
-            <input
-              type="password"
-              {...registerSecurity("password")}
-              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-              required
-            />
+            <div className="neumorphic-field-group">
+              <span className="neumorphic-icon-box">
+                <Lock className="h-4 w-4" />
+              </span>
+              <div className="relative flex flex-1 items-center gap-3">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  {...registerSecurity("password")}
+                  className="neumorphic-input w-full px-4 py-3 text-sm"
+                  placeholder="Create a strong password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[#64748b]"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
             <span className="text-xs text-red-500">{securityErrors.password?.message as string}</span>
-            <p className="text-xs text-[#64748b] dark:text-[#94a3b8]">Minimum 12 chars, 1 uppercase, 1 number, 1 special character.</p>
           </label>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <div className="neumorphic-password-policy p-4">
+            <p className="mb-3 text-sm font-medium text-[#334155]">Password policy</p>
+            <div className="grid gap-2">
+              {securityPasswordRules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className={`flex items-center gap-3 rounded-[18px] px-3 py-2 transition ${rule.isValid ? "bg-[#eef8ef] text-[#2f6f35]" : "bg-[#faf0f2] text-[#8d3f4f]"}`}
+                >
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs transition ${rule.isValid ? "bg-[#d9f3d9] text-[#2f6f35]" : "bg-[#fcedef] text-[#a45a68]"}`}
+                  >
+                    {rule.isValid ? "✔" : "●"}
+                  </span>
+                  <span className="text-sm">{rule.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-[18px] bg-[#e0e5ec] px-4 py-3 text-sm font-medium text-[#334155] shadow-[inset_4px_4px_8px_#b8bec9,inset_-4px_-4px_8px_#ffffff]">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <span>{securityPasswordStrength.emoji}</span>
+                  <span>{securityPasswordStrength.label}</span>
+                </span>
+                <span className="text-xs text-[#556785]">Strength</span>
+              </div>
+              <div className="mt-3 neomorphic-progress-track">
+                <div
+                  className={`neumorphic-progress-fill ${
+                    securityPasswordValidCount === 5
+                      ? "bg-[#22c55e]"
+                      : securityPasswordValidCount >= 3
+                      ? "bg-[#f59e0b]"
+                      : "bg-[#ef4444]"
+                  }`}
+                  style={{ width: `${(securityPasswordValidCount / 5) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Confirm password</span>
-            <input
-              type="password"
-              {...registerSecurity("confirmPassword")}
-              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-              required
-            />
+            <div className="neumorphic-field-group">
+              <span className="neumorphic-icon-box">
+                <Lock className="h-4 w-4" />
+              </span>
+              <div className="relative flex flex-1 items-center gap-3">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  {...registerSecurity("confirmPassword")}
+                  className="neumorphic-input w-full px-4 py-3 text-sm"
+                  placeholder="Confirm password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((visible) => !visible)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[#64748b]"
+                >
+                  {showConfirmPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
             <span className="text-xs text-red-500">{securityErrors.confirmPassword?.message as string}</span>
           </label>
           {Array.from({ length: 3 }, (_, index) => {
             const questionKey = `question${index + 1}` as "question1" | "question2" | "question3";
             const answerKey = `answer${index + 1}` as "answer1" | "answer2" | "answer3";
             return (
-              <div key={index} className="grid gap-3 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-                <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Security question {index + 1}</p>
-                <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+              <div key={index} className="neumorphic-surface rounded-[28px] p-4">
+                <p className="text-sm font-medium text-[#334155]">Security question {index + 1}</p>
+                <label className="space-y-2 text-sm text-[#334155]">
                   <span>Question</span>
                   <input
                     type="text"
                     {...registerSecurity(questionKey)}
-                    className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                    className="neumorphic-input w-full px-4 py-3 text-sm"
                     required
                   />
                   <span className="text-xs text-red-500">{(securityErrors as any)[questionKey]?.message as string}</span>
                 </label>
-                <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+                <label className="space-y-2 text-sm text-[#334155]">
                   <span>Answer</span>
                   <input
                     type="text"
                     {...registerSecurity(answerKey)}
-                    className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                    className="neumorphic-input w-full px-4 py-3 text-sm"
                     required
                   />
                   <span className="text-xs text-red-500">{(securityErrors as any)[answerKey]?.message as string}</span>
@@ -1010,19 +1209,19 @@ export function SignupWizard() {
               </div>
             );
           })}
-          <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-            <p className="text-sm font-medium text-[#334155] dark:text-[#cbd5e1]">Simple CAPTCHA</p>
+          <div className="neumorphic-surface rounded-[28px] p-4">
+            <p className="text-sm font-medium text-[#334155]">Simple CAPTCHA</p>
             <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-              <div className="rounded-3xl bg-white dark:bg-[#0f172a] p-4 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_4px_4px_10px_#c1c7d0]">{captchaQuestion}</div>
+              <div className="neumorphic-input rounded-[22px] bg-[#e0e5ec] p-4 text-sm text-[#111827] shadow-[inset_4px_4px_8px_#b8bec9,inset_-4px_-4px_8px_#ffffff]">{captchaQuestion}</div>
               <input
                 type="text"
                 value={captchaInput}
                 onChange={(event) => setCaptchaInput(event.target.value)}
                 placeholder="Enter result"
-                className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                className="neumorphic-input w-full px-4 py-3 text-sm"
               />
             </div>
-            <p className="mt-3 text-xs text-[#64748b] dark:text-[#94a3b8]">This quick math check keeps bots out.</p>
+            <p className="mt-3 text-xs text-[#64748b]">This quick math check keeps bots out.</p>
           </div>
           <div className="flex items-center justify-between gap-4">
             <NeumorphicButton type="button" className="w-full" onClick={() => setStep(1)}>Back</NeumorphicButton>
@@ -1039,44 +1238,44 @@ export function SignupWizard() {
           await createAccountAndPrepare2FA(nextPayload, nextBackupCodes);
         })} className="grid gap-4">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Recovery setup</h3>
-            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Capture alternate recovery channels and backup codes.</p>
+            <h3 className="text-2xl font-semibold text-[#111827]">Recovery setup</h3>
+            <p className="mt-2 text-sm text-[#475569]">Capture alternate recovery channels and backup codes.</p>
           </div>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Alternate email</span>
             <input
               type="email"
               {...registerRecovery("alternateEmail")}
-              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="neumorphic-input w-full px-4 py-3 text-sm"
               required
             />
             <span className="text-xs text-red-500">{recoveryErrors.alternateEmail?.message as string}</span>
           </label>
-          <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+          <label className="space-y-2 text-sm text-[#334155]">
             <span>Alternate phone number</span>
             <input
               type="tel"
               {...registerRecovery("alternatePhone")}
-              className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+              className="neumorphic-input w-full px-4 py-3 text-sm"
               required
             />
             <span className="text-xs text-red-500">{recoveryErrors.alternatePhone?.message as string}</span>
           </label>
-          <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-4 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Recovery codes</p>
-              <button type="button" onClick={generateBackupCodes} className="rounded-3xl border border-[#cbd5e1] px-4 py-2 text-sm text-[#334155] dark:text-[#cbd5e1] transition hover:bg-[#e2e8f0]">Generate codes</button>
+          <div className="neumorphic-surface rounded-[28px] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[#111827]">Recovery codes</p>
+              <button type="button" onClick={generateBackupCodes} className="neumorphic-button animate-up-1 rounded-3xl px-4 py-2 text-sm">Generate codes</button>
             </div>
             {backupCodes.length > 0 ? (
               <div className="mt-4 grid gap-2">
                 {backupCodes.map((code) => (
-                  <div key={code} className="rounded-2xl bg-white dark:bg-[#0f172a] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_4px_4px_10px_#c1c7d0]">{code}</div>
+                  <div key={code} className="neumorphic-surface rounded-[18px] bg-[#e0e5ec] px-4 py-3 text-sm text-[#111827]">{code}</div>
                 ))}
               </div>
             ) : (
-              <p className="mt-4 text-sm text-[#64748b] dark:text-[#94a3b8]">Generate 8 backup codes and store them securely. Each code is 8 characters long.</p>
+              <p className="mt-4 text-sm text-[#64748b]">Generate 8 backup codes and store them securely. Each code is 8 characters long.</p>
             )}
-            <label className="mt-4 flex items-center gap-3 text-sm text-[#334155] dark:text-[#cbd5e1]">
+            <label className="mt-4 flex items-center gap-3 text-sm text-[#334155]">
               <input type="checkbox" checked={backupConfirmed} onChange={(event) => setBackupConfirmed(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#3549ff] focus:ring-[#3549ff]" />
               <span>I have stored the recovery codes securely.</span>
             </label>
@@ -1091,26 +1290,28 @@ export function SignupWizard() {
       {step === 4 && (
         <div className="grid gap-6">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Google Authenticator 2FA</h3>
-            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Scan the QR code and enter the 6-digit authenticator code on this page to continue.</p>
+            <h3 className="text-2xl font-semibold text-[#111827]">Google Authenticator 2FA</h3>
+            <p className="mt-2 text-sm text-[#475569]">Scan the QR code and enter the 6-digit authenticator code on this page to continue.</p>
           </div>
 
           {qrCodeDataUrl ? (
-            <div className="grid gap-6 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-              <div className="text-sm text-[#334155] dark:text-[#cbd5e1]">
-                <p className="font-semibold text-[#111827] dark:text-[#f8fafc]">Step 1</p>
-                <p className="mt-2">Open Google Authenticator, Authy, or another TOTP app and scan the QR code below.</p>
+            <div className="grid gap-6">
+              <div className="neumorphic-surface rounded-[28px] p-6">
+                <div className="text-sm text-[#334155]">
+                  <p className="font-semibold text-[#111827]">Step 1</p>
+                  <p className="mt-2">Open Google Authenticator, Authy, or another TOTP app and scan the QR code below.</p>
+                </div>
               </div>
-              <div className="rounded-3xl border border-[#dbe0ea] bg-white dark:bg-[#0f172a] p-6 text-center">
+              <div className="neumorphic-surface rounded-[28px] p-6 text-center">
                 <img src={qrCodeDataUrl} alt="Authenticator QR code" className="mx-auto max-w-full" />
               </div>
               {otpauthUrl && (
-                <div className="rounded-3xl border border-[#dbe0ea] bg-[#f8fafc] p-4 text-xs text-[#334155] dark:text-[#cbd5e1]">
-                  <p className="font-semibold text-[#111827] dark:text-[#f8fafc]">Manual setup string</p>
+                <div className="neumorphic-surface rounded-[28px] p-4 text-xs text-[#334155]">
+                  <p className="font-semibold text-[#111827]">Manual setup string</p>
                   <p className="mt-2 break-words">{otpauthUrl}</p>
                 </div>
               )}
-              <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+              <label className="space-y-2 text-sm text-[#334155]">
                 <span>Authenticator code</span>
                 <input
                   type="text"
@@ -1118,7 +1319,7 @@ export function SignupWizard() {
                   onChange={(event) => setTotpCode(event.target.value)}
                   placeholder="Enter 6-digit code"
                   maxLength={6}
-                  className="w-full rounded-3xl border border-white/90 dark:border-slate-700 bg-[#e6ebf2] dark:bg-[#1f2937] px-4 py-3 text-sm text-[#111827] dark:text-[#f8fafc] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
+                  className="neumorphic-input w-full px-4 py-3 text-sm"
                 />
               </label>
               <NeumorphicButton type="button" className="w-full" onClick={verifyTwoFactor} disabled={isVerifyingTotp || twoFactorVerified}>
@@ -1126,26 +1327,26 @@ export function SignupWizard() {
               </NeumorphicButton>
 
               {twoFactorVerified && (
-                <div className="rounded-3xl border border-[#22c55e] bg-[#ecfdf5] p-4 text-sm text-[#166534]">
+                <div className="neumorphic-surface rounded-[28px] p-4 text-sm text-[#166534] bg-[#e0f2df]">
                   <p className="font-semibold">Two-factor authentication is enabled.</p>
                   <p className="mt-2">Your Super Admin account is now protected with Google Authenticator.</p>
                 </div>
               )}
 
               {setupBackupCodes.length > 0 && (
-                <div className="rounded-3xl border border-[#e2e8f0] bg-[#e6ebf2] dark:bg-[#1f2937] p-4 text-sm text-[#334155] dark:text-[#cbd5e1]">
-                  <p className="mb-3 font-semibold text-[#111827] dark:text-[#f8fafc]">Backup codes</p>
+                <div className="neumorphic-surface rounded-[28px] p-4 text-sm text-[#334155]">
+                  <p className="mb-3 font-semibold text-[#111827]">Backup codes</p>
                   <ul className="grid gap-2">
                     {setupBackupCodes.map((code) => (
-                      <li key={code} className="rounded-2xl bg-white dark:bg-[#0f172a] px-4 py-3 shadow-[inset_4px_4px_10px_#c1c7d0]">{code}</li>
+                      <li key={code} className="neumorphic-surface rounded-[18px] bg-[#e0e5ec] px-4 py-3 text-sm text-[#111827]">{code}</li>
                     ))}
                   </ul>
                 </div>
               )}
             </div>
           ) : (
-            <div className="rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
-              <p className="text-sm text-[#334155] dark:text-[#cbd5e1]">
+            <div className="neumorphic-surface rounded-[28px] p-6">
+              <p className="text-sm text-[#334155]">
                 {isSubmitting
                   ? "Creating your account and generating the Google Authenticator QR code..."
                   : "Preparing your authenticator setup. If this takes a moment, please wait."}
@@ -1165,10 +1366,10 @@ export function SignupWizard() {
       {step === 5 && (
         <div className="grid gap-6">
           <div>
-            <h3 className="text-2xl font-semibold text-[#111827] dark:text-[#f8fafc]">Review & complete</h3>
-            <p className="mt-2 text-sm text-[#475569] dark:text-[#94a3b8]">Confirm the information and accept terms to finish your signup.</p>
+            <h3 className="text-2xl font-semibold text-[#111827]">Review & complete</h3>
+            <p className="mt-2 text-sm text-[#475569]">Confirm the information and accept terms to finish your signup.</p>
           </div>
-          <div className="grid gap-4 rounded-3xl border border-white/90 dark:border-slate-700 bg-[#f0f4fb] dark:bg-[#111827] p-6 shadow-[inset_4px_4px_10px_#c1c7d0,inset_-4px_-4px_10px_#ffffff]">
+          <div className="grid gap-4 neomorphic-surface rounded-[28px] p-6">
             <SummaryItem title="Name" value={payload.identity.fullName || "-"} />
             <SummaryItem title="Official email" value={payload.contact.officialEmail || "-"} />
             <SummaryItem title="Primary phone" value={payload.contact.primaryPhone || "-"} />
@@ -1178,7 +1379,7 @@ export function SignupWizard() {
           </div>
           <div className="flex items-center justify-between gap-4">
             <NeumorphicButton type="button" className="w-full" onClick={() => setStep(4)}>Back</NeumorphicButton>
-            <NeumorphicButton type="button" className="w-full" onClick={finishSignup} disabled={isSubmitting}>{isSubmitting ? "Finalizing..." : "Finalize signup"}</NeumorphicButton>
+            <NeumorphicButton type="button" className="w-full" onClick={finishSignup} disabled={isSubmitting}>{isSubmitting ? "Finalizing..." : "Sign up as Super Admin"}</NeumorphicButton>
           </div>
         </div>
       )}
@@ -1190,9 +1391,9 @@ export function SignupWizard() {
 
 function SummaryItem({ title, value }: { title: string; value: string | number }) {
   return (
-    <div className="rounded-3xl bg-white dark:bg-[#0f172a] px-4 py-4 shadow-[inset_4px_4px_10px_#c1c7d0]">
-      <p className="text-xs uppercase tracking-[0.3em] text-[#64748b] dark:text-[#94a3b8]">{title}</p>
-      <p className="mt-2 text-sm text-[#111827] dark:text-[#f8fafc]">{value}</p>
+    <div className="neumorphic-surface rounded-[28px] px-4 py-4 bg-[#e0e5ec]">
+      <p className="text-xs uppercase tracking-[0.3em] text-[#64748b]">{title}</p>
+      <p className="mt-2 text-sm text-[#111827]">{value}</p>
     </div>
   );
 }

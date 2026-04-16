@@ -8,26 +8,28 @@ export function StepProgress({
   current: number;
 }) {
   return (
-    <div className="mb-8 flex flex-wrap items-center gap-3">
+    <div className="mb-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-6">
       {steps.map((step, index) => {
         const isActive = index === current;
         const isComplete = index < current;
+        const circleStyles = isComplete
+          ? "bg-[#dbe8ff] text-[#2563eb] border-[#2563eb]"
+          : isActive
+          ? "bg-[#e6efff] text-[#1e40af] border-[#1e40af]"
+          : "bg-[#eef2f8] text-[#64748b] border-[#cbd5e1]";
+
+        const labelStyles = isActive ? "text-[#111827] font-semibold" : "text-[#64748b]";
+
         return (
-          <div key={step} className="flex items-center gap-3">
-            <span
-              className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold transition ${
-                isComplete
-                  ? "bg-[#8ec9ff] text-white"
-                  : isActive
-                  ? "bg-[#3549ff] text-white shadow-[inset_2px_2px_6px_rgba(0,0,0,0.1)]"
-                  : "bg-[#e6ebf2] text-[#6b7280]"
-              }`}
+          <div key={step} className="flex flex-col items-center gap-3">
+            <button
+              type="button"
+              aria-current={isActive ? "step" : undefined}
+              className={`flex h-16 w-16 items-center justify-center rounded-full border-2 text-lg font-semibold transition duration-200 animate-up-1 ${circleStyles}`}
             >
               {index + 1}
-            </span>
-            <span className={`text-sm ${isActive ? "font-semibold text-[#111827] dark:text-[#f8fafc]" : "text-[#6b7280] dark:text-[#cbd5e1]"}`}>
-              {step}
-            </span>
+            </button>
+            <span className={`text-center text-sm ${labelStyles}`}>{step}</span>
           </div>
         );
       })}

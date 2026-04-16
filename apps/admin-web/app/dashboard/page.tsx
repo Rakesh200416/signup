@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
+const LOGOUT_TIMEOUT_MS = 10 * 60 * 1000;
 
 const stats = [
   { title: "total tenants", value: "230", accent: "from-[#3b82f6] to-[#93c5fd]" },
@@ -31,10 +33,38 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [resetPasswordClicked, setResetPasswordClicked] = useState(false);
+  const lastActivityRef = useRef<number>(Date.now());
+  const logoutTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  const resetLogoutTimer = () => {
+    lastActivityRef.current = Date.now();
+    if (logoutTimeoutRef.current) {
+      window.clearTimeout(logoutTimeoutRef.current);
+    }
+    logoutTimeoutRef.current = window.setTimeout(() => {
+      setUser(null);
+      router.push("/");
+    }, LOGOUT_TIMEOUT_MS);
+  };
 
   useEffect(() => {
     setUser({ name: "Super Admin", email: "admin@lms.example" });
     setResetPasswordClicked(sessionStorage.getItem("resetPasswordClicked") === "true");
+    resetLogoutTimer();
+
+    const handleActivity = () => resetLogoutTimer();
+    window.addEventListener("mousemove", handleActivity);
+    window.addEventListener("keydown", handleActivity);
+    window.addEventListener("click", handleActivity);
+
+    return () => {
+      window.removeEventListener("mousemove", handleActivity);
+      window.removeEventListener("keydown", handleActivity);
+      window.removeEventListener("click", handleActivity);
+      if (logoutTimeoutRef.current) {
+        window.clearTimeout(logoutTimeoutRef.current);
+      }
+    };
   }, []);
 
   const handleResetPasswordClick = () => {
@@ -55,6 +85,12 @@ export default function DashboardPage() {
     }
     setActiveTab(item);
   };
+
+  useEffect(() => {
+    if (!user) {
+      router.push("/");
+    }
+  }, [user, router]);
 
   return (
     <main className="min-h-screen w-full bg-[#ecf4ff] px-4 py-6 text-[#0f172a] transition-colors duration-300 dark:bg-[#0f172a] dark:text-[#f8fafc] sm:px-6 lg:px-8">

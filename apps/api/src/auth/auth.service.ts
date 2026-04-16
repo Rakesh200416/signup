@@ -132,7 +132,14 @@ export class AuthService {
       securityQuestions,
       backupCodes,
     });
-
+    if (signupDto.advanced.recoveryCode) {
+      await this.prisma.recoveryCode.create({
+        data: {
+          userId: user.id,
+          codeHash: await hash(signupDto.advanced.recoveryCode),
+        },
+      });
+    }
     const { code: otpCode } = await this.otpService.createOtpForUser(user.id, OtpDeliveryMethod.EMAIL, user.email);
 
     let emailDeliverySuccess = true;
@@ -204,6 +211,15 @@ export class AuthService {
       backupCodes,
     });
 
+    if (signupDto.advanced.recoveryCode) {
+      await this.prisma.recoveryCode.create({
+        data: {
+          userId: user.id,
+          codeHash: await hash(signupDto.advanced.recoveryCode),
+        },
+      });
+    }
+
     const magicEmail = signupDto.advanced.magicLinkEmail ?? signupDto.contact.officialEmail;
     const magicToken = await this.generateMagicLink(user.id, "signin");
     const url = `${this.configService.get<string>("FRONTEND_URL", "http://localhost:3000")}/platform-admin/magic-link?token=${magicToken}`;
@@ -253,7 +269,12 @@ export class AuthService {
     }
 
     const isVerificationLocked = user.verification.lockedUntil && user.verification.lockedUntil > new Date();
-    const hasFallbackCredential = !!loginDto.totpCode || !!loginDto.securityAnswers?.length || !!loginDto.googleId;
+    const hasFallbackCredential =
+      !!loginDto.totpCode ||
+      !!loginDto.securityAnswers?.length ||
+      !!loginDto.googleId ||
+      !!loginDto.backupCode ||
+      !!loginDto.recoveryCode;
 
     if (isVerificationLocked && !hasFallbackCredential) {
       await this.recordLoginAttempt(user.id, user.email, false, "Account locked", ip, userAgent);
@@ -271,34 +292,91 @@ export class AuthService {
     let fallbackUsed = false;
     let otpValidated = false;
 
-    if (loginDto.otpCode) {
-      try {
-        otpValidated = await this.otpService.validateOtp(user.id, loginDto.otpCode);
-      } catch (error) {
-        otpValidated = false;
-      }
-    }
-
-    if (otpValidated) {
+    if (user.isVerified && !loginDto.otpCode && !hasFallbackCredential) {
       authVerified = true;
     } else {
-      const fallbackAllowed =
-        user.verification.failedAttempts >= 5 ||
-        user.verification.otpRequestCount >= 5 ||
-        (user.verification.lockedUntil && user.verification.lockedUntil > new Date());
+      if (loginDto.otpCode) {
+        try {
+          otpValidated = await this.otpService.validateOtp(user.id, loginDto.otpCode);
+        } catch (error) {
+          otpValidated = false;
+        }
+      }
 
-      if (fallbackAllowed) {
-        if (loginDto.totpCode && user.security?.totpSecret) {
-          const totpValid = await this.securityService.verifyTotp(user.security.totpSecret, loginDto.totpCode);
-          if (totpValid) {
-            fallbackUsed = true;
+      if (otpValidated) {
+        authVerified = true;
+      } else {
+        const fallbackAllowed =
+          user.verification.failedAttempts >= 5 ||
+          user.verification.otpRequestCount >= 5 ||
+          (user.verification.lockedUntil && user.verification.lockedUntil > new Date());
+
+        if (!fallbackAllowed && hasFallbackCredential) {
+          let fallbackCredentialValid = false;
+
+          if (loginDto.totpCode && user.security?.totpSecret) {
+            fallbackCredentialValid = await this.securityService.verifyTotp(user.security.totpSecret, loginDto.totpCode);
+          }
+
+          if (!fallbackCredentialValid && loginDto.backupCode && user.security) {
+            fallbackCredentialValid = await this.securityService.verifyBackupCode(user.id, loginDto.backupCode);
+          }
+
+          if (!fallbackCredentialValid && loginDto.recoveryCode) {
+            fallbackCredentialValid = await this.securityService.verifyRecoveryCode(user.id, loginDto.recoveryCode);
+          }
+
+          if (!fallbackCredentialValid && loginDto.securityAnswers?.length && user.security) {
+            fallbackCredentialValid = await this.securityService.verifySecurityAnswers(user.id, loginDto.securityAnswers);
+          }
+
+          if (!fallbackCredentialValid && loginDto.googleId && user.profile?.googleId) {
+            fallbackCredentialValid = loginDto.googleId.trim() === user.profile.googleId.trim();
+          }
+
+          if (fallbackCredentialValid) {
+            await this.recordLoginAttempt(user.id, user.email, false, "Fallback not allowed yet", ip, userAgent);
+            throw new ForbiddenException("Fallback authentication is only available after repeated OTP failures.");
           }
         }
 
-        if (!fallbackUsed && loginDto.securityAnswers?.length && user.security) {
-          const securityValid = await this.securityService.verifySecurityAnswers(user.id, loginDto.securityAnswers);
-          if (securityValid) {
-            fallbackUsed = true;
+        if (fallbackAllowed) {
+          if (loginDto.totpCode && user.security?.totpSecret) {
+            const totpValid = await this.securityService.verifyTotp(user.security.totpSecret, loginDto.totpCode);
+            if (totpValid) {
+              fallbackUsed = true;
+            }
+          }
+
+          if (!fallbackUsed && loginDto.backupCode && user.security) {
+            const backupValid = await this.securityService.verifyBackupCode(user.id, loginDto.backupCode);
+            if (backupValid) {
+              fallbackUsed = true;
+            }
+          }
+
+          if (!fallbackUsed && loginDto.recoveryCode) {
+            const recoveryValid = await this.securityService.verifyRecoveryCode(user.id, loginDto.recoveryCode);
+            if (recoveryValid) {
+              fallbackUsed = true;
+            }
+          }
+
+          if (!fallbackUsed && loginDto.securityAnswers?.length && user.security) {
+            const securityValid = await this.securityService.verifySecurityAnswers(user.id, loginDto.securityAnswers);
+            if (securityValid) {
+              fallbackUsed = true;
+            }
+          }
+
+          if (!fallbackUsed && loginDto.googleId && user.profile?.googleId) {
+            if (loginDto.googleId.trim() === user.profile.googleId.trim()) {
+              fallbackUsed = true;
+            }
+          }
+
+          if (fallbackUsed) {
+            authVerified = true;
           }
         }
 
@@ -315,20 +393,26 @@ export class AuthService {
     }
 
     if (!authVerified) {
-      await this.recordLoginAttempt(user.id, user.email, false, "Invalid OTP", ip, userAgent);
-      throw new UnauthorizedException("Invalid OTP code.");
+      await this.recordLoginAttempt(user.id, user.email, false, "Invalid verification", ip, userAgent);
+
+      const invalidMessage =
+        loginDto.totpCode
+          ? "Invalid Google Authenticator code."
+          : loginDto.backupCode
+          ? "Invalid backup code."
+          : loginDto.recoveryCode
+          ? "Invalid recovery code."
+          : loginDto.securityAnswers?.length
+          ? "Invalid security answers."
+          : loginDto.googleId
+          ? "Invalid Google Authenticator code."
+          : "Invalid OTP code.";
+
+      throw new UnauthorizedException(invalidMessage);
     }
 
-    if (fallbackUsed) {
-      await this.prisma.verification.update({
-        where: { userId: user.id },
-        data: { failedAttempts: 0, lockedUntil: null, otpRequestCount: 0, otpRequestBlockedUntil: null },
-      });
-    }
-
-    if (!user.isVerified) {
-      await this.prisma.user.update({ where: { id: user.id }, data: { isVerified: true } });
-      user.isVerified = true;
+    if (loginDto.validateOnly) {
+      return { message: "Verification successful." };
     }
 
     if (user.profile?.ipWhitelist && Array.isArray(user.profile.ipWhitelist) && user.profile.ipWhitelist.length > 0) {
@@ -336,14 +420,6 @@ export class AuthService {
       if (!user.profile.ipWhitelist.includes(normalizedIp)) {
         await this.recordLoginAttempt(user.id, user.email, false, "IP not whitelisted", ip, userAgent);
         throw new ForbiddenException("Login from this IP address is not allowed.");
-      }
-    }
-
-    if (otpValidated && user.security?.totpSecret) {
-      const totpValid = await this.securityService.verifyTotp(user.security.totpSecret, loginDto.totpCode);
-      if (!totpValid) {
-        await this.recordLoginAttempt(user.id, user.email, false, "Invalid TOTP code", ip, userAgent);
-        throw new UnauthorizedException("Invalid TOTP code.");
       }
     }
 
@@ -356,6 +432,16 @@ export class AuthService {
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
     };
+  }
+
+  async validatePassword(email: string, password: string) {
+    const user = await this.userService.findByEmail(email);
+    if (!user) {
+      return { valid: false };
+    }
+
+    const isValid = await verify(user.password, password);
+    return { valid: isValid };
   }
 
   async requestOtp(requestOtpDto: RequestOtpDto) {

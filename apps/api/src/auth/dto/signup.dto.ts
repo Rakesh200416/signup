@@ -41,6 +41,11 @@ export const signupSchema = z.object({
     totpEnabled: z.boolean().optional(),
     magicLinkEmail: z.string().email().optional(),
     backupCodes: z.array(z.string()).optional(),
+    recoveryCode: z
+      .string()
+      .min(8, "Recovery code must be at least 8 characters.")
+      .regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]+$/, "Recovery code must contain letters and numbers only.")
+      .optional(),
     ipWhitelist: z.array(z.string()).optional(),
     googleId: z.string().min(3).optional(),
   }),

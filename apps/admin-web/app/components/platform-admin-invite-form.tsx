@@ -1,41 +1,47 @@
 "use client";
 
-import { ChangeEvent, useState } from "react";
+import Link from "next/link";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "react-hot-toast";
-import * as XLSX from "xlsx";
+import { Mail, Lock, Phone, ShieldCheck, User } from "lucide-react";
 import { z } from "zod";
 import api from "../lib/api";
 import { NeumorphicButton } from "./NeumorphicButton";
 import { NeumorphicCard } from "./NeumorphicCard";
 import { DatePicker } from "./DatePicker";
+import { DropdownSelect } from "./DropdownSelect";
 
 const platformAdminInviteSchema = z
   .object({
-    fullName: z.string().min(3, "Full name is required."),
+    fullName: z.string().min(3, "Name cannot be empty."),
     dob: z.string().min(8, "Date of birth is required."),
     govtIdType: z.string().min(2, "Government ID type is required."),
     profilePhotoUrl: z.string().url("Enter a valid profile photo URL.").optional().or(z.literal("")),
-    officialEmail: z.string().email("A valid official email is required."),
-    personalEmail: z.string().email("Enter a valid personal email.").optional().or(z.literal("")),
-    primaryPhone: z.string().min(8, "Primary phone is required."),
+    officialEmail: z.string().email("This email does not look valid."),
+    personalEmail: z.string().email("This email does not look valid.").optional().or(z.literal("")),
+    primaryPhone: z.string().min(8, "Use at least 8 characters."),
     secondaryPhone: z.string().min(8, "Secondary phone must be at least 8 digits.").optional().or(z.literal("")),
     googleId: z.string().min(3, "Google ID must be at least 3 characters.").optional().or(z.literal("")),
     password: z
       .string()
-      .min(12, "Password must be at least 12 characters.")
-      .regex(/(?=.*[a-z])/, "At least one lowercase character is required.")
-      .regex(/(?=.*[A-Z])/, "At least one uppercase character is required.")
-      .regex(/(?=.*\d)/, "At least one digit is required.")
-      .regex(/(?=.*[^A-Za-z0-9])/, "At least one special character is required."),
-    confirmPassword: z.string().min(12, "Confirm your password."),
+      .min(12, "Use at least 12 characters.")
+      .regex(/(?=.*[a-z])/, "Add letters, numbers and symbols for a stronger password.")
+      .regex(/(?=.*[A-Z])/, "Add letters, numbers and symbols for a stronger password.")
+      .regex(/(?=.*\d)/, "Add letters, numbers and symbols for a stronger password.")
+      .regex(/(?=.*[^A-Za-z0-9])/, "Add letters, numbers and symbols for a stronger password."),
+    confirmPassword: z.string().min(12, "Please confirm your password."),
+    recoveryCode: z
+      .string()
+      .min(8, "Recovery code must be at least 8 characters.")
+      .regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]+$/, "Recovery code must be letters and numbers only."),
     question1: z.string().min(10, "Security question 1 is required."),
-    answer1: z.string().min(3, "Answer 1 is required."),
+    answer1: z.string().min(3, "Please answer security question 1."),
     question2: z.string().min(10, "Security question 2 is required."),
-    answer2: z.string().min(3, "Answer 2 is required."),
+    answer2: z.string().min(3, "Please answer security question 2."),
     question3: z.string().min(10, "Security question 3 is required."),
-    answer3: z.string().min(3, "Answer 3 is required."),
+    answer3: z.string().min(3, "Please answer security question 3."),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords must match.",
@@ -57,6 +63,7 @@ type ParsedInviteRow = {
   googleId?: string;
   password: string;
   confirmPassword: string;
+  recoveryCode: string;
   question1: string;
   answer1: string;
   question2: string;
@@ -141,40 +148,10 @@ const buildSignupPayload = (values: PlatformAdminInviteFormValues) => ({
   },
   advanced: {
     googleId: values.googleId || undefined,
+    recoveryCode: values.recoveryCode || undefined,
     ipWhitelist: [],
   },
 });
-
-const formatUploadedRow = (row: Record<string, unknown>): ParsedInviteRow => ({
-  fullName: findRowValue(row, ["fullName", "Full Name", "name"]),
-  dob: findRowValue(row, ["dob", "DOB", "dateOfBirth", "date of birth"]),
-  govtIdType: findRowValue(row, ["govtIdType", "GovtIdType", "ID Type", "governmentIdType"]),
-  govtIdUrl: findRowValue(row, ["govtIdUrl", "GovtIdUrl", "govtId", "governmentIdUrl"]),
-  profilePhotoUrl: findRowValue(row, ["profilePhotoUrl", "ProfilePhotoUrl", "photoUrl", "profilePhoto"]),
-  officialEmail: findRowValue(row, ["officialEmail", "OfficialEmail", "email", "official email"]),
-  personalEmail: findRowValue(row, ["personalEmail", "PersonalEmail", "personal email"]),
-  primaryPhone: findRowValue(row, ["primaryPhone", "PrimaryPhone", "phone", "primary phone"]),
-  secondaryPhone: findRowValue(row, ["secondaryPhone", "SecondaryPhone", "secondary phone"]),
-  googleId: findRowValue(row, ["googleId", "GoogleId", "google id", "google_id"]),
-  password: findRowValue(row, ["password", "Password"]),
-  confirmPassword: findRowValue(row, ["confirmPassword", "ConfirmPassword", "confirm password"]),
-  question1: findRowValue(row, ["question1", "securityQuestion1", "question 1"]),
-  answer1: findRowValue(row, ["answer1", "securityAnswer1", "answer 1"]),
-  question2: findRowValue(row, ["question2", "securityQuestion2", "question 2"]),
-  answer2: findRowValue(row, ["answer2", "securityAnswer2", "answer 2"]),
-  question3: findRowValue(row, ["question3", "securityQuestion3", "question 3"]),
-  answer3: findRowValue(row, ["answer3", "securityAnswer3", "answer 3"]),
-  magicLinkEmail: findRowValue(row, ["magicLinkEmail", "MagicLinkEmail", "magic link email"]),
-  ipWhitelist: findRowValue(row, ["ipWhitelist", "ipWhitelist", "ip whitelist"]),
-});
-
-const parseInviteFile = async (file: File) => {
-  const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(arrayBuffer, { type: "array" });
-  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: "" });
-  return rawRows.map(formatUploadedRow);
-};
 
 const fetchCsrfToken = async () => {
   try {
@@ -187,9 +164,6 @@ const fetchCsrfToken = async () => {
 };
 
 export function PlatformAdminInviteForm() {
-  const [uploadedRows, setUploadedRows] = useState<ParsedInviteRow[]>([]);
-  const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
-  const [isParsing, setIsParsing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
 
@@ -200,6 +174,8 @@ export function PlatformAdminInviteForm() {
     control,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<PlatformAdminInviteFormValues>({
     resolver: zodResolver(platformAdminInviteSchema),
@@ -214,6 +190,7 @@ export function PlatformAdminInviteForm() {
       secondaryPhone: "",
       password: "",
       confirmPassword: "",
+      recoveryCode: "",
       question1: "",
       answer1: "",
       question2: "",
@@ -222,6 +199,21 @@ export function PlatformAdminInviteForm() {
       answer3: "",
     },
   });
+  const passwordValue = watch("password") || "";
+  const passwordPolicyRules = [
+    { id: "length", label: "At least 12 characters", isValid: passwordValue.length >= 12 },
+    { id: "uppercase", label: "At least 1 uppercase letter", isValid: /[A-Z]/.test(passwordValue) },
+    { id: "lowercase", label: "At least 1 lowercase letter", isValid: /[a-z]/.test(passwordValue) },
+    { id: "digit", label: "At least 1 numeric digit", isValid: /\d/.test(passwordValue) },
+    { id: "special", label: "At least 1 special character", isValid: /[^A-Za-z0-9]/.test(passwordValue) },
+  ];
+  const passwordValidCount = passwordPolicyRules.filter((rule) => rule.isValid).length;
+  const passwordStrength =
+    passwordValidCount === 5
+      ? { label: "Strong", emoji: "🟢", tone: "bg-[#e6f6e6] text-[#2f6f35] border-[#bceab3]" }
+      : passwordValidCount >= 3
+      ? { label: "Medium", emoji: "🟡", tone: "bg-[#fff7df] text-[#a8791f] border-[#f4dd8d]" }
+      : { label: "Weak", emoji: "🔴", tone: "bg-[#fbeaea] text-[#9b3e42] border-[#e9c3c5]" };
 
   const inviteAdmin = async (payload: PlatformAdminInviteFormValues) => {
     const csrfToken = await fetchCsrfToken();
@@ -235,7 +227,7 @@ export function PlatformAdminInviteForm() {
 
   const onSubmitError = (errors: Record<string, unknown>) => {
     const firstError = Object.values(errors)[0] as any;
-    const message = firstError?.message || "Please fix the highlighted form fields.";
+    const message = firstError?.message || "Please correct the highlighted fields before sending the invite.";
     setStatusMessage(message);
     toast.error(message);
     setIsSending(false);
@@ -263,8 +255,8 @@ export function PlatformAdminInviteForm() {
           },
         );
       }
-      toast.success("Platform admin invite sent successfully.");
-      setStatusMessage(`Invite sent to ${result.email}. Magic link: ${result.magicLink}`);
+      toast.success("Invitation sent. Check your inbox.");
+      setStatusMessage(`Invite link sent to ${result.email}.`);
       reset();
       setGovtIdFile(null);
     } catch (error: any) {
@@ -278,85 +270,14 @@ export function PlatformAdminInviteForm() {
 
   const submitInviteForm = handleSubmit(onSubmit, onSubmitError);
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsParsing(true);
-    setUploadResults([]);
-
-    try {
-      const rows = await parseInviteFile(file);
-      setUploadedRows(rows);
-      toast.success(`${rows.length} rows parsed from the uploaded file.`);
-    } catch (error: any) {
-      toast.error(getToastMessage(error, "Unable to parse the uploaded file."));
-    } finally {
-      setIsParsing(false);
-    }
-  };
-
-  const sendBulkInvites = async () => {
-    if (uploadedRows.length === 0) {
-      toast.error("Upload a CSV or Excel file first.");
-      return;
-    }
-
-    setIsSending(true);
-    setUploadResults([]);
-
-    try {
-      const csrfToken = await fetchCsrfToken();
-      const results: UploadResult[] = [];
-
-      for (const row of uploadedRows) {
-        const missingFields = [row.fullName, row.officialEmail, row.primaryPhone, row.password, row.confirmPassword, row.question1, row.answer1, row.question2, row.answer2, row.question3, row.answer3].filter((value) => !value);
-        if (missingFields.length > 0) {
-          results.push({ email: row.officialEmail || "unknown", success: false, message: "Missing required fields in row." });
-          continue;
-        }
-
-        try {
-          await api.post(
-            "/auth/invite-platform-admin",
-            buildSignupPayload({
-              ...row,
-              officialEmail: row.officialEmail,
-              primaryPhone: row.primaryPhone,
-              password: row.password,
-              confirmPassword: row.confirmPassword,
-              question1: row.question1,
-              answer1: row.answer1,
-              question2: row.question2,
-              answer2: row.answer2,
-              question3: row.question3,
-              answer3: row.answer3,
-            }),
-            { headers: { "X-CSRF-Token": csrfToken } },
-          );
-          results.push({ email: row.officialEmail, success: true, message: "Invited successfully." });
-        } catch (error: any) {
-          results.push({ email: row.officialEmail || "unknown", success: false, message: getToastMessage(error, "Invite failed.") });
-        }
-      }
-
-      setUploadResults(results);
-      toast.success("Bulk invite processing completed.");
-    } catch (error: any) {
-      toast.error(getToastMessage(error, "Bulk invite failed."));
-    } finally {
-      setIsSending(false);
-    }
-  };
-
   return (
     <div className="grid gap-6">
       <NeumorphicCard className="max-w-4xl w-full">
-        <div className="mb-6">
-          <p className="text-sm uppercase tracking-[0.35em] text-[#475569] dark:text-[#94a3b8]">Platform admin signup</p>
-          <h1 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">Invite a new platform admin</h1>
+        <div className="mb-6 text-center sm:text-left">
+          <p className="text-sm uppercase tracking-[0.35em] text-[#5c6d94]">Platform Admin Signup</p>
+          <h1 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">Create your account to access the admin workspace</h1>
           <p className="mt-3 text-sm text-[#475569] dark:text-[#94a3b8]">
-            Create a platform admin with full onboarding details or upload several users at once using CSV/Excel.
+            Invite a platform admin with onboarding details and send the access link directly to the official email inbox.
           </p>
         </div>
 
@@ -364,41 +285,50 @@ export function PlatformAdminInviteForm() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Full name</span>
-              <input type="text" {...register("fullName")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <User className="h-4 w-4" />
+                </span>
+                <input type="text" {...register("fullName")} className="neumorphic-field-input" placeholder="Enter full name" />
+              </div>
               <span className="text-xs text-red-500">{errors.fullName?.message as string}</span>
             </label>
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Date of birth</span>
-            <Controller
-              control={control}
-              name="dob"
-              render={({ field }) => (
-                <DatePicker
-                  value={field.value}
-                  onChange={field.onChange}
-                  placeholder="Choose birth date"
-                  className="w-full"
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <Controller
+                  control={control}
+                  name="dob"
+                  render={({ field }) => (
+                    <DatePicker
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Choose birth date"
+                      className="w-full"
+                    />
+                  )}
                 />
-              )}
-            />
-            <span className="text-xs text-red-500">{errors.dob?.message as string}</span>
-          </label>
+              </div>
+              <span className="text-xs text-red-500">{errors.dob?.message as string}</span>
+            </label>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Government ID type</span>
-              <div className="relative">
-                <select
-                  {...register("govtIdType")}
-                  className="neumorphic-input w-full appearance-none rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 pr-10 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff] dark:border-slate-700 dark:bg-[#1f2937] dark:text-[#f8fafc]"
-                >
-                  <option value="">Select ID type</option>
-                  {govtIdOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#64748b]">▾</span>
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <DropdownSelect
+                  value={watch("govtIdType")}
+                  options={govtIdOptions}
+                  placeholder="Select ID type"
+                  onChange={(value) => setValue("govtIdType", value)}
+                />
               </div>
               <span className="text-xs text-red-500">{errors.govtIdType?.message as string}</span>
             </label>
@@ -409,7 +339,7 @@ export function PlatformAdminInviteForm() {
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(event) => setGovtIdFile(event.target.files?.[0] ?? null)}
-                  className="neumorphic-input w-full rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 pr-16 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff] dark:border-slate-700 dark:bg-[#1f2937] dark:text-[#f8fafc]"
+                  className="neumorphic-input w-full cursor-pointer px-4 py-3 text-sm"
                 />
                 <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-[#e2e8f0] px-3 py-1 text-xs text-[#334155] shadow-[inset_2px_2px_6px_rgba(0,0,0,0.08)] dark:bg-[#1f2937] dark:text-[#cbd5e1]">
                   📎 Browse
@@ -422,12 +352,18 @@ export function PlatformAdminInviteForm() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Official email</span>
-              <input type="email" {...register("officialEmail")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <Mail className="h-4 w-4" />
+                </span>
+                <input type="email" {...register("officialEmail")} className="neumorphic-field-input" placeholder="admin@company.com" />
+              </div>
+              <span className="text-xs text-[#64748b]">Invitation link will be sent to this email inbox.</span>
               <span className="text-xs text-red-500">{errors.officialEmail?.message as string}</span>
             </label>
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Personal email</span>
-              <input type="email" {...register("personalEmail")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+<input type="email" {...register("personalEmail")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Enter personal email (optional)" />
               <span className="text-xs text-red-500">{errors.personalEmail?.message as string}</span>
             </label>
           </div>
@@ -435,12 +371,17 @@ export function PlatformAdminInviteForm() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Primary phone</span>
-              <input type="tel" {...register("primaryPhone")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <Phone className="h-4 w-4" />
+                </span>
+                <input type="tel" {...register("primaryPhone")} className="neumorphic-field-input" placeholder="+1 234 567 890" />
+              </div>
               <span className="text-xs text-red-500">{errors.primaryPhone?.message as string}</span>
             </label>
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Secondary phone</span>
-              <input type="tel" {...register("secondaryPhone")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <input type="tel" {...register("secondaryPhone")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Optional secondary phone" />
               <span className="text-xs text-red-500">{errors.secondaryPhone?.message as string}</span>
             </label>
           </div>
@@ -448,59 +389,124 @@ export function PlatformAdminInviteForm() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Google ID</span>
-              <input type="text" {...register("googleId")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <Mail className="h-4 w-4" />
+                </span>
+                <input type="text" {...register("googleId")} className="neumorphic-field-input" placeholder="your.google.id@gmail.com" />
+              </div>
               <span className="text-xs text-red-500">{errors.googleId?.message as string}</span>
             </label>
-            <div />
+            <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
+              <span>Recovery code</span>
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <input type="text" {...register("recoveryCode")} className="neumorphic-field-input" placeholder="Enter recovery code" />
+              </div>
+              <span className="text-xs text-[#64748b]">Letters and numbers only, at least 8 characters.</span>
+              <span className="text-xs text-red-500">{errors.recoveryCode?.message as string}</span>
+            </label>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Password</span>
-              <input type="password" {...register("password")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <Lock className="h-4 w-4" />
+                </span>
+                <input type="password" {...register("password")} className="neumorphic-field-input" placeholder="Create a strong password" />
+              </div>
               <span className="text-xs text-red-500">{errors.password?.message as string}</span>
             </label>
             <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
               <span>Confirm password</span>
-              <input type="password" {...register("confirmPassword")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+              <div className="neumorphic-field-group">
+                <span className="neumorphic-icon-box">
+                  <Lock className="h-4 w-4" />
+                </span>
+                <input type="password" {...register("confirmPassword")} className="neumorphic-field-input" placeholder="Re-enter password" />
+              </div>
               <span className="text-xs text-red-500">{errors.confirmPassword?.message as string}</span>
             </label>
+          </div>
+
+          <div className="rounded-[24px] bg-[#e0e5ec] p-4 shadow-[6px_6px_12px_#b8bec9,-6px_-6px_12px_#ffffff]">
+            <p className="mb-3 text-sm font-medium text-[#334155]">Password policy</p>
+            <div className="grid gap-2">
+              {passwordPolicyRules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className={`flex items-center gap-3 rounded-[18px] px-3 py-2 transition ${rule.isValid ? "bg-[#eef8ef] text-[#2f6f35]" : "bg-[#faf0f2] text-[#8d3f4f]"}`}
+                >
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs transition ${rule.isValid ? "bg-[#d9f3d9] text-[#2f6f35]" : "bg-[#fcedef] text-[#a45a68]"}`}
+                  >
+                    {rule.isValid ? "✔" : "●"}
+                  </span>
+                  <span className="text-sm">{rule.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-[18px] bg-[#e0e5ec] px-4 py-3 text-sm font-medium text-[#334155] shadow-[inset_4px_4px_8px_#b8bec9,inset_-4px_-4px_8px_#ffffff]">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <span>{passwordValidCount === 5 ? "🟢" : passwordValidCount >= 3 ? "🟡" : "🔴"}</span>
+                  <span>{passwordValidCount === 5 ? "Strong" : passwordValidCount >= 3 ? "Medium" : "Weak"}</span>
+                </span>
+                <span className="text-xs text-[#556785]">Strength</span>
+              </div>
+              <div className="mt-3 neomorphic-progress-track">
+                <div
+                  className={`neumorphic-progress-fill ${
+                    passwordValidCount === 5
+                      ? "bg-[#22c55e]"
+                      : passwordValidCount >= 3
+                      ? "bg-[#f59e0b]"
+                      : "bg-[#ef4444]"
+                  }`}
+                  style={{ width: `${(passwordValidCount / 5) * 100}%` }}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <span>Security question 1</span>
-                <input type="text" {...register("question1")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+                <input type="text" {...register("question1")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Enter security question 1" />
                 <span className="text-xs text-red-500">{errors.question1?.message as string}</span>
               </label>
               <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <span>Answer 1</span>
-                <input type="text" {...register("answer1")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+                <input type="text" {...register("answer1")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Answer for question 1" />
                 <span className="text-xs text-red-500">{errors.answer1?.message as string}</span>
               </label>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <span>Security question 2</span>
-                <input type="text" {...register("question2")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+                <input type="text" {...register("question2")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Enter security question 2" />
                 <span className="text-xs text-red-500">{errors.question2?.message as string}</span>
               </label>
               <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <span>Answer 2</span>
-                <input type="text" {...register("answer2")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+                <input type="text" {...register("answer2")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Answer for question 2" />
                 <span className="text-xs text-red-500">{errors.answer2?.message as string}</span>
               </label>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <span>Security question 3</span>
-                <input type="text" {...register("question3")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+                <input type="text" {...register("question3")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Enter security question 3" />
                 <span className="text-xs text-red-500">{errors.question3?.message as string}</span>
               </label>
               <label className="space-y-2 text-sm text-[#334155] dark:text-[#cbd5e1]">
                 <span>Answer 3</span>
-                <input type="text" {...register("answer3")} className="neumorphic-input w-full px-4 py-3 text-sm" />
+                <input type="text" {...register("answer3")} className="neumorphic-input w-full px-4 py-3 text-sm" placeholder="Answer for question 3" />
                 <span className="text-xs text-red-500">{errors.answer3?.message as string}</span>
               </label>
             </div>
@@ -514,7 +520,7 @@ export function PlatformAdminInviteForm() {
               onClick={() => setStatusMessage("Sending invite... Please wait.")}
               disabled={isSending}
             >
-              {isSending ? "Sending invite..." : "Send platform admin invite"}
+              {isSending ? "Sending invite..." : "Send invitation"}
             </NeumorphicButton>
             <NeumorphicButton type="button" className="w-full" onClick={() => {
               reset();
@@ -528,63 +534,15 @@ export function PlatformAdminInviteForm() {
               {statusMessage}
             </p>
           )}
+          <div className="mt-6 text-center text-sm text-[#5c6d94]">
+            Already have an account?{' '}
+            <Link href="/platform-admin/signin" className="font-semibold text-[#243457] transition duration-200 hover:text-[#1b2740]">
+              Sign in
+            </Link>
+          </div>
         </form>
       </NeumorphicCard>
 
-      <NeumorphicCard className="max-w-4xl w-full">
-        <div className="mb-6">
-          <p className="text-sm uppercase tracking-[0.35em] text-[#475569] dark:text-[#94a3b8]">Bulk upload</p>
-          <h2 className="mt-2 text-3xl font-semibold text-[#111827] dark:text-[#f8fafc]">Upload CSV / Excel file</h2>
-          <p className="mt-3 text-sm text-[#475569] dark:text-[#94a3b8]">
-            Upload multiple platform admin invitations at once. The file should include headers for required columns such as fullName, officialEmail, primaryPhone, password, securityQuestion1, securityAnswer1, etc.
-          </p>
-        </div>
-
-        <div className="grid gap-4">
-          <input
-            type="file"
-            accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-            onChange={handleFileChange}
-            className="neumorphic-input w-full cursor-pointer rounded-3xl border border-white/90 bg-[#e6ebf2] px-4 py-3 text-sm text-[#111827] shadow-[inset_6px_6px_12px_#c1c7d0,inset_-6px_-6px_12px_#ffffff] focus:outline-none focus:ring-2 focus:ring-[#8ec9ff]"
-          />
-          <NeumorphicButton type="button" className="w-full" onClick={sendBulkInvites} disabled={isSending || isParsing || uploadedRows.length === 0}>
-            {isSending ? "Sending bulk invites..." : "Process uploaded file"}
-          </NeumorphicButton>
-          {isParsing && <p className="text-sm text-[#475569] dark:text-[#94a3b8]">Parsing file... please wait.</p>}
-
-          {uploadedRows.length > 0 && (
-            <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0] dark:border-slate-700 dark:bg-[#111827]">
-              <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Preview rows</p>
-              <p className="mt-2 text-xs text-[#64748b] dark:text-[#94a3b8]">Showing first 5 parsed rows from the upload.</p>
-              <div className="mt-4 grid gap-3">
-                {uploadedRows.slice(0, 5).map((row, index) => (
-                  <div key={index} className="rounded-3xl bg-white p-4 text-sm text-[#0f172a] shadow-[inset_4px_4px_10px_#c1c7d0] dark:bg-[#0f172a] dark:text-[#f8fafc]">
-                    <div className="grid gap-1 sm:grid-cols-2">
-                      <span className="font-semibold">{row.fullName || "Missing name"}</span>
-                      <span>{row.officialEmail || "Missing email"}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-[#475569] dark:text-[#94a3b8]">Primary phone: {row.primaryPhone || "Missing"}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {uploadResults.length > 0 && (
-            <div className="rounded-3xl border border-white/90 bg-[#f0f4fb] p-4 shadow-[inset_4px_4px_10px_#c1c7d0] dark:border-slate-700 dark:bg-[#111827]">
-              <p className="text-sm font-semibold text-[#111827] dark:text-[#f8fafc]">Upload results</p>
-              <div className="mt-3 grid gap-2">
-                {uploadResults.map((result) => (
-                  <div key={`${result.email}-${result.message}`} className={`rounded-3xl p-3 text-sm ${result.success ? "bg-emerald-100 text-emerald-900" : "bg-rose-100 text-rose-900"}`}>
-                    <div className="font-semibold">{result.email || "Unknown email"}</div>
-                    <div>{result.message}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </NeumorphicCard>
     </div>
   );
 }

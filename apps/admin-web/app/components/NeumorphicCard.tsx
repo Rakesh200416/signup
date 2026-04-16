@@ -4,7 +4,7 @@ export function NeumorphicCard({ children, className }: { children: React.ReactN
   return (
     <div
       className={
-        "neumorphic-surface p-8 text-[#0f172a] dark:text-[#f8fafc] " +
+        "neumorphic-surface rounded-[32px] bg-[#e0e5ec] p-8 text-[#2d3436] " +
         (className ?? "")
       }
     >
