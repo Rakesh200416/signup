@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [userInitialized, setUserInitialized] = useState(false);
   const [resetPasswordClicked, setResetPasswordClicked] = useState(false);
   const lastActivityRef = useRef<number>(Date.now());
   const logoutTimeoutRef = useRef<number | null>(null);
@@ -51,6 +52,7 @@ export default function DashboardPage() {
     setUser({ name: "Super Admin", email: "admin@lms.example" });
     setResetPasswordClicked(sessionStorage.getItem("resetPasswordClicked") === "true");
     resetLogoutTimer();
+    setUserInitialized(true);
 
     const handleActivity = () => resetLogoutTimer();
     window.addEventListener("mousemove", handleActivity);
@@ -61,7 +63,7 @@ export default function DashboardPage() {
       window.removeEventListener("mousemove", handleActivity);
       window.removeEventListener("keydown", handleActivity);
       window.removeEventListener("click", handleActivity);
-      if (logoutTimeoutRef.current) {
+      if (logoutTimeoutRef.current !== null) {
         window.clearTimeout(logoutTimeoutRef.current);
       }
     };
@@ -87,10 +89,10 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (!user) {
+    if (userInitialized && !user) {
       router.push("/");
     }
-  }, [user, router]);
+  }, [user, userInitialized, router]);
 
   return (
     <main className="min-h-screen w-full bg-[#ecf4ff] px-4 py-6 text-[#0f172a] transition-colors duration-300 dark:bg-[#0f172a] dark:text-[#f8fafc] sm:px-6 lg:px-8">
