@@ -201,9 +201,13 @@ export function ModernSigninExperience({
     }
 
     if (alternateValue.trim()) {
-      if (alternateMethod === "totp") payload.totpCode = alternateValue.trim();
-        if (alternateMethod === "backupCode") payload.backupCode = alternateValue.trim();
-        if (alternateMethod === "recoveryCode") payload.recoveryCode = alternateValue.trim();
+      if (alternateMethod === "totp") {
+        payload.totpCode = alternateValue.trim();
+      } else if (alternateMethod === "backupCode") {
+        payload.backupCode = alternateValue.trim();
+      } else if (alternateMethod === "recoveryCode") {
+        payload.recoveryCode = alternateValue.trim();
+      } else if (alternateMethod === "security") {
         payload.securityAnswers = alternateValue
           .split(",")
           .map((value) => value.trim())
