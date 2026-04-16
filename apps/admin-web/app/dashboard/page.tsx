@@ -34,11 +34,11 @@ export default function DashboardPage() {
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [resetPasswordClicked, setResetPasswordClicked] = useState(false);
   const lastActivityRef = useRef<number>(Date.now());
-  const logoutTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const logoutTimeoutRef = useRef<number | null>(null);
 
   const resetLogoutTimer = () => {
     lastActivityRef.current = Date.now();
-    if (logoutTimeoutRef.current) {
+    if (logoutTimeoutRef.current !== null) {
       window.clearTimeout(logoutTimeoutRef.current);
     }
     logoutTimeoutRef.current = window.setTimeout(() => {
