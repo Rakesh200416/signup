@@ -16,6 +16,8 @@ import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { loginSchema, LoginDto } from "./dto/login.dto";
 import { requestOtpSchema, RequestOtpDto } from "./dto/request-otp.dto";
 import { signupSchema, SignupDto } from "./dto/signup.dto";
+import { institutionAdminSignupSchema, InstitutionAdminSignupDto } from "./dto/institution-admin-signup.dto";
+import { sendOtpSchema, SendOtpDto } from "./dto/send-otp.dto";
 import { validateMagicLinkSchema, ValidateMagicLinkDto } from "./dto/validate-magic-link.dto";
 import { validatePasswordSchema, ValidatePasswordDto } from "./dto/validate-password.dto";
 import { verifyOtpSchema, VerifyOtpDto } from "./dto/verify-otp.dto";
@@ -40,6 +42,18 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(signupSchema))
   async signup(@Body() signupDto: SignupDto) {
     return this.authService.signup(signupDto);
+  }
+
+  @Post("institution-admin/signup")
+  @UsePipes(new ZodValidationPipe(institutionAdminSignupSchema))
+  async signupInstitutionAdmin(@Body() signupDto: InstitutionAdminSignupDto) {
+    return this.authService.signupInstitutionAdmin(signupDto);
+  }
+
+  @Post("send-otp")
+  @UsePipes(new ZodValidationPipe(sendOtpSchema))
+  async sendOtp(@Body() sendOtpDto: SendOtpDto) {
+    return this.authService.sendOtp(sendOtpDto);
   }
 
   @Post("login")

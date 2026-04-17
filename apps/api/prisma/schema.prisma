@@ -10,7 +10,10 @@ datasource db {
 enum Role {
   SUPER_ADMIN
   PLATFORM_ADMIN
-  USER
+  INSTITUTION_ADMIN
+  INSTITUTION_COORDINATOR
+  FACULTY
+  STUDENT
 }
 
 model User {

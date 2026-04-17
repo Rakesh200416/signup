@@ -16,6 +16,8 @@ import { EmailService } from "../email/email.service";
 import { SmsService } from "../sms/sms.service";
 import { StorageService } from "../storage/storage.service";
 import { SignupDto } from "./dto/signup.dto";
+import { InstitutionAdminSignupDto } from "./dto/institution-admin-signup.dto";
+import { SendOtpDto } from "./dto/send-otp.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RequestOtpDto } from "./dto/request-otp.dto";
 import { VerifyOtpDto } from "./dto/verify-otp.dto";
@@ -233,6 +235,43 @@ export class AuthService {
     };
   }
 
+  async signupInstitutionAdmin(signupDto: InstitutionAdminSignupDto) {
+    const existing = await this.userService.findByEmail(signupDto.officialEmail);
+    if (existing) {
+      throw new ConflictException("A user with this official email already exists.");
+    }
+
+    const passwordHash = await this.hashValue(signupDto.password);
+    const user = await this.userService.createInstitutionAdmin({
+      name: `${signupDto.firstName} ${signupDto.lastName}`,
+      email: signupDto.officialEmail,
+      password: passwordHash,
+      profile: {
+        phonePrimary: signupDto.officialPhone,
+        googleId: signupDto.googleId ?? null,
+        ipWhitelist: [],
+      },
+    });
+
+    const { code: otpCode } = await this.otpService.createOtpForUser(user.id, OtpDeliveryMethod.EMAIL, user.email);
+    await this.emailService.sendOtpEmail(user.email, otpCode, "Signup");
+
+    return {
+      message: "Institution admin account created. Verify the email OTP to complete setup.",
+      userId: user.id,
+      status: "PENDING_VERIFICATION",
+    };
+  }
+
+  async sendOtp(sendOtpDto: SendOtpDto) {
+    const purpose = sendOtpDto.purpose === "recovery" ? "recovery" : "signin";
+    return this.requestOtp({
+      email: sendOtpDto.target,
+      method: sendOtpDto.channel,
+      purpose,
+    });
+  }
+
   async validateMagicLink(token: string) {
     const magicLink = await this.prisma.magicLink.findUnique({ where: { token } });
     if (!magicLink || magicLink.used || magicLink.expiresAt < new Date() || magicLink.purpose !== "SIGNIN") {
@@ -250,11 +289,16 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, ip: string) {
-    const user = await this.userService.findByEmail(loginDto.email);
+    const user = loginDto.email
+      ? await this.userService.findByEmail(loginDto.email)
+      : loginDto.phone
+      ? await this.userService.findByPhone(loginDto.phone)
+      : null;
     const userAgent = this.configService.get<string>("USER_AGENT", "unknown");
+    const loginId = loginDto.email ?? loginDto.phone ?? "unknown";
 
     if (!user) {
-      await this.recordLoginAttempt(null, loginDto.email, false, "User not found", ip, userAgent);
+      await this.recordLoginAttempt(null, loginId, false, "User not found", ip, userAgent);
       throw new UnauthorizedException("Invalid credentials.");
     }
 
@@ -498,12 +542,22 @@ export class AuthService {
   }
 
   async verifyOtp(verifyOtpDto: VerifyOtpDto) {
-    const user = await this.userService.findByEmail(verifyOtpDto.email);
+    const code = verifyOtpDto.otpCode ?? verifyOtpDto.otp;
+    if (!code) {
+      throw new BadRequestException("OTP code is required.");
+    }
+
+    const user = verifyOtpDto.email
+      ? await this.userService.findByEmail(verifyOtpDto.email)
+      : verifyOtpDto.channel && verifyOtpDto.target
+      ? await this.userService.findByPhone(verifyOtpDto.target)
+      : null;
+
     if (!user) {
       throw new UnauthorizedException("No matching account found.");
     }
 
-    const verified = await this.otpService.validateOtp(user.id, verifyOtpDto.otpCode, false);
+    const verified = await this.otpService.validateOtp(user.id, code, false);
     if (!verified) {
       throw new UnauthorizedException("OTP validation failed.");
     }
@@ -518,17 +572,24 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials.");
     }
 
-    const isPasswordValid = await verify(user.password, setupDto.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException("Invalid credentials.");
-    }
-
     if (setupDto.totpCode) {
       const security = await this.prisma.security.findUnique({ where: { userId: user.id } });
       if (!security?.totpSecret || !(await this.securityService.verifyTotp(security.totpSecret, setupDto.totpCode))) {
         throw new BadRequestException("Invalid authenticator code.");
       }
-      return { verified: true, message: "Two-factor authentication has been enabled." };
+      return {
+        verified: true,
+        message: "Two-factor authentication has been enabled.",
+      };
+    }
+
+    if (!setupDto.password) {
+      return this.securityService.initializeTwoFactor(user.id, user.email);
+    }
+
+    const isPasswordValid = await verify(user.password, setupDto.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException("Invalid credentials.");
     }
 
     return this.securityService.initializeTwoFactor(user.id, user.email);
