@@ -334,13 +334,15 @@ export class AuthService {
       : null;
     const userAgent = this.configService.get<string>("USER_AGENT", "unknown");
     const loginId = loginDto.email ?? loginDto.phone ?? "unknown";
+    const isProduction = process.env.NODE_ENV === "production";
 
     if (!user) {
       await this.recordLoginAttempt(null, loginId, false, "User not found", ip, userAgent);
       throw new UnauthorizedException("Invalid credentials.");
     }
 
-    if (!loginDto.acceptTerms || !loginDto.captchaToken) {
+    // In production, require captcha and terms. In development, make them optional.
+    if (isProduction && (!loginDto.acceptTerms || !loginDto.captchaToken)) {
       await this.recordLoginAttempt(user.id, user.email, false, "Missing terms or captcha", ip, userAgent);
       throw new BadRequestException("Captcha and terms acceptance are required.");
     }
