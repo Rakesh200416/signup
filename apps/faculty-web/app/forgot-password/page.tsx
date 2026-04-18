@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import AuthShell from "../components/auth/AuthShell";
 import NeuInput from "../components/auth/NeuInput";
 import NeuButton from "../components/auth/NeuButton";
 import { authApi, extractApiErrorMessage } from "../lib/api";
+
+const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -13,41 +15,25 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function normalizeIdentifier(value: string) {
-    return value.trim();
-  }
-
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    const normalizedIdentifier = normalizeIdentifier(identifier);
-
-    if (!normalizedIdentifier) {
-      setError("Enter your official email or phone number.");
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = identifier.trim();
+    if (!target) {
+      setError("Enter your email or mobile number.");
       return;
     }
-
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedIdentifier);
-    const channel = isEmail ? "email" : "phone";
 
     try {
       setLoading(true);
       setError("");
-
-      await authApi.sendOtp({
-        channel,
-        target: normalizedIdentifier,
-        purpose: "recovery",
-      });
-
-      router.push(
-        `/auth/institution-admin/reset-password?identifier=${encodeURIComponent(
-          normalizedIdentifier
-        )}`
-      );
+      const channel = isEmail(target) ? "email" : "mobile";
+      await authApi.sendOtp({ target, channel, purpose: "recovery" });
+      const query = isEmail(target)
+        ? `email=${encodeURIComponent(target)}`
+        : `target=${encodeURIComponent(target)}&channel=mobile`;
+      router.push(`/reset-password?${query}`);
     } catch (err) {
-      const message = extractApiErrorMessage(err);
-      setError(message);
+      setError(extractApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -55,19 +41,15 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthShell
-      title="Forgot Password"
-      subtitle="Recover using official email or phone number."
+      title="Recovery"
+      subtitle="Enter your email or phone to receive a recovery OTP."
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <NeuInput
-          label="Official Email or Phone Number"
+          label="Email or Phone"
           value={identifier}
-          onChange={(e) => {
-            setIdentifier(e.target.value);
-            if (error) setError("");
-          }}
-          placeholder="Enter official email or phone number"
-          disabled={loading}
+          onChange={(event) => setIdentifier(event.target.value)}
+          placeholder="Enter your email or phone"
         />
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}

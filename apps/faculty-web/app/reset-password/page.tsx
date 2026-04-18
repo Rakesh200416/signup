@@ -1,35 +1,37 @@
- "use client";
+"use client";
 
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import AuthShell from "../components/auth/AuthShell";
-import OtpInput from "../components/auth/OtpInput";
 import NeuInput from "../components/auth/NeuInput";
 import NeuButton from "../components/auth/NeuButton";
 import PasswordChecklist from "../components/auth/PasswordChecklist";
 import { authApi, extractApiErrorMessage } from "../lib/api";
 
+const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
 function ResetPasswordContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const identifier = searchParams.get("identifier")?.trim() || "";
 
-  const [otp, setOtp] = useState("");
+  // Step 1: Email and Password
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  
+  // Step 2: OTP Verification
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  
+  // Common
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSendOtp(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    if (!identifier) {
-      setError("Missing recovery identifier.");
-      return;
-    }
-
-    if (!otp || otp.length !== 6) {
-      setError("Enter a valid 6-digit OTP.");
+    const target = identifier.trim();
+    if (!target) {
+      setError("Enter your email or mobile number.");
       return;
     }
 
@@ -51,19 +53,50 @@ function ResetPasswordContent() {
     try {
       setLoading(true);
       setError("");
+      
+      const channel = isEmail(target) ? "email" : "mobile";
+      await authApi.sendOtp({ target, channel, purpose: "recovery" });
+      
+      setOtpSent(true);
+    } catch (err) {
+      setError(extractApiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+  async function handleVerifyOtp(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    const target = identifier.trim();
+    if (!otp || otp.length !== 6) {
+      setError("Enter a valid 6-digit OTP.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const channel = isEmail(target) ? "email" : "mobile";
+      
+      // First verify OTP
+      const payload = isEmail(target)
+        ? { email: target, otpCode: otp, purpose: "recovery" }
+        : { target, channel, otpCode: otp, purpose: "recovery" };
+      await authApi.verifyOtp(payload);
+
+      // Then reset password
       await authApi.resetPassword({
-        ...(isEmail ? { email: identifier } : { phone: identifier }),
+        ...(isEmail(target) ? { email: target } : { phone: target }),
         password,
         confirmPassword,
         otpCode: otp,
       });
 
-      router.push("/auth/institution-admin/login");
+      router.push("/login");
     } catch (err) {
-      const message = extractApiErrorMessage(err);
-      setError(message);
+      setError(extractApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -71,43 +104,85 @@ function ResetPasswordContent() {
 
   return (
     <AuthShell
-      title="Reset Password"
-      subtitle="Enter the OTP sent to your official email or phone and set a new password."
+      title={otpSent ? "Verify OTP" : "Reset Password"}
+      subtitle={
+        otpSent
+          ? `Enter the OTP sent to ${identifier}.`
+          : "Enter your email/phone and set a new password."
+      }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <NeuInput
-          label="Official Email or Phone"
-          value={identifier}
-          readOnly
-          placeholder="Recovery identifier"
-        />
+      {!otpSent ? (
+        // Step 1: Email + Password + Confirm Password
+        <form onSubmit={handleSendOtp} className="space-y-4">
+          <NeuInput
+            label="Email or Phone"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="Enter your email or phone"
+          />
 
-        <OtpInput value={otp} onChange={setOtp} />
+          <NeuInput
+            label="New Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter new password"
+          />
 
-        <NeuInput
-          label="New Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter new password"
-        />
+          <NeuInput
+            label="Confirm New Password"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm new password"
+          />
 
-        <NeuInput
-          label="Confirm New Password"
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Confirm new password"
-        />
+          <PasswordChecklist password={password} />
 
-        <PasswordChecklist password={password} />
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <NeuButton type="submit" className="w-full" disabled={loading}>
+            {loading ? "Sending OTP..." : "Send OTP"}
+          </NeuButton>
+        </form>
+      ) : (
+        // Step 2: OTP Verification
+        <form onSubmit={handleVerifyOtp} className="space-y-4">
+          <NeuInput
+            label="Email or Phone"
+            value={identifier}
+            readOnly
+            placeholder="Your email or phone"
+          />
 
-        <NeuButton type="submit" className="w-full" disabled={loading}>
-          {loading ? "Resetting..." : "Reset Password"}
-        </NeuButton>
-      </form>
+          <NeuInput
+            label="OTP Code"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            placeholder="Enter the 6-digit code"
+          />
+
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+          <NeuButton type="submit" className="w-full" disabled={loading}>
+            {loading ? "Verifying..." : "Verify OTP & Reset Password"}
+          </NeuButton>
+
+          <div className="text-center">
+            <button
+              type="button"
+              className="text-sm text-blue-600 hover:text-blue-800"
+              onClick={() => {
+                setOtpSent(false);
+                setOtp("");
+                setError("");
+              }}
+            >
+              Change email/phone or password
+            </button>
+          </div>
+        </form>
+      )}
     </AuthShell>
   );
 }

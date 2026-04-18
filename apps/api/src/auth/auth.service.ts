@@ -16,6 +16,7 @@ import { EmailService } from "../email/email.service";
 import { SmsService } from "../sms/sms.service";
 import { StorageService } from "../storage/storage.service";
 import { SignupDto } from "./dto/signup.dto";
+import { FacultySignupDto } from "./dto/faculty-signup.dto";
 import { InstitutionAdminSignupDto } from "./dto/institution-admin-signup.dto";
 import { SendOtpDto } from "./dto/send-otp.dto";
 import { LoginDto } from "./dto/login.dto";
@@ -289,6 +290,43 @@ export class AuthService {
       message: "Coordinator account created. Verify the email OTP to complete setup.",
       userId: user.id,
       status: "PENDING_VERIFICATION",
+    };
+  }
+
+  async signupFaculty(signupDto: FacultySignupDto) {
+    const existing = await this.userService.findByEmail(signupDto.email);
+    if (existing) {
+      throw new ConflictException("A user with this email already exists.");
+    }
+
+    const passwordHash = await this.hashValue(signupDto.password);
+
+    const user = await this.userService.createFaculty({
+      name: signupDto.name,
+      email: signupDto.email,
+      password: passwordHash,
+      profile: {
+        googleId: signupDto.googleId ?? null,
+        ipWhitelist: [],
+      },
+    });
+
+    const { code: otpCode } = await this.otpService.createOtpForUser(user.id, OtpDeliveryMethod.EMAIL, user.email);
+
+    let emailDeliverySuccess = true;
+    let emailDeliveryError: string | null = null;
+    try {
+      await this.emailService.sendOtpEmail(user.email, otpCode, "Signup");
+    } catch (error: any) {
+      emailDeliverySuccess = false;
+      emailDeliveryError = error.message;
+    }
+
+    return {
+      message: "Faculty account created successfully. Please verify your email.",
+      userId: user.id,
+      emailDeliverySuccess,
+      emailDeliveryError,
     };
   }
 

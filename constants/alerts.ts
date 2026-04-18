@@ -1,1 +1,0 @@
-export const ALERTS = { EMAIL_INVALID: "This email does not look valid.", PASSWORD_WEAK: "Password is too weak.", OTP_SENT: "OTP sent. Check your inbox.", SERVER_ERROR: "Server issue. Please try again shortly.", };
