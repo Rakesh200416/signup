@@ -205,4 +205,53 @@ export class UserService {
       },
     });
   }
+
+  async createLearner(data: {
+    name: string;
+    email: string;
+    password: string;
+  }) {
+    return this.prisma.user.create({
+      data: {
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        role: "STUDENT",
+        isVerified: false,
+        isApproved: true,
+        profile: {
+          create: {
+            govtIdType: "LEARNER",
+            govtIdUrl: null,
+            profilePhotoUrl: null,
+            phonePrimary: "",
+            phoneSecondary: null,
+            backupEmail: null,
+            googleId: null,
+            ipWhitelist: [],
+          },
+        },
+        security: {
+          create: {
+            securityQuestions: [],
+            totpSecret: null,
+            backupCodes: [],
+          },
+        },
+        verification: {
+          create: {
+            emailOTP: null,
+            phoneOTP: null,
+            otpExpiry: null,
+            failedAttempts: 0,
+          },
+        },
+      },
+      include: {
+        profile: true,
+        security: true,
+        verification: true,
+      },
+    });
+  }
 }

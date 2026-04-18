@@ -25,6 +25,7 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { Setup2FADto } from "./dto/setup-2fa.dto";
 import { RecoverDto } from "./dto/recover.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
+import { LearnerSignupDto } from "./dto/learner-signup.dto";
 import { hash, verify, argon2id } from "argon2";
 import { randomUUID } from "crypto";
 import { sign } from "jsonwebtoken";
@@ -260,6 +261,39 @@ export class AuthService {
       message: "Institution admin account created. Verify the email OTP to complete setup.",
       userId: user.id,
       status: "PENDING_VERIFICATION",
+    };
+  }
+
+  async signupLearner(signupDto: LearnerSignupDto) {
+    const existing = await this.userService.findByEmail(signupDto.email);
+    if (existing) {
+      throw new ConflictException("An account with this email already exists.");
+    }
+
+    const passwordHash = await this.hashValue(signupDto.password);
+
+    const user = await this.userService.createLearner({
+      name: signupDto.name,
+      email: signupDto.email,
+      password: passwordHash,
+    });
+
+    const { code: otpCode } = await this.otpService.createOtpForUser(user.id, OtpDeliveryMethod.EMAIL, user.email);
+
+    let emailDeliverySuccess = true;
+    let emailDeliveryError: string | null = null;
+    try {
+      await this.emailService.sendOtpEmail(user.email, otpCode, "Signup");
+    } catch (error) {
+      emailDeliverySuccess = false;
+      emailDeliveryError = error.message;
+    }
+
+    return {
+      message: "Learner account created successfully. Please verify your email.",
+      userId: user.id,
+      emailDeliverySuccess,
+      emailDeliveryError,
     };
   }
 

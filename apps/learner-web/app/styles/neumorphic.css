@@ -1,0 +1,39 @@
+body {
+  background: #e6ebf2;
+  font-family: 'Poppins', sans-serif;
+}
+
+.neu-card {
+  background: #e6ebf2;
+  border-radius: 20px;
+  box-shadow: 8px 8px 16px #c5ccd6,
+              -8px -8px 16px #ffffff;
+  padding: 30px;
+}
+
+.neu-input {
+  border: none;
+  outline: none;
+  padding: 12px;
+  border-radius: 12px;
+  background: #e6ebf2;
+  box-shadow: inset 4px 4px 8px #c5ccd6,
+              inset -4px -4px 8px #ffffff;
+  width: 100%;
+}
+
+.neu-button {
+  padding: 12px 20px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  background: #e6ebf2;
+  box-shadow: 6px 6px 12px #c5ccd6,
+              -6px -6px 12px #ffffff;
+  transition: 0.2s;
+}
+
+.neu-button:active {
+  box-shadow: inset 6px 6px 12px #c5ccd6,
+              inset -6px -6px 12px #ffffff;
+}

@@ -27,6 +27,7 @@ import { resetPasswordSchema, ResetPasswordDto } from "./dto/reset-password.dto"
 import { refreshTokenSchema, RefreshTokenDto } from "./dto/refresh-token.dto";
 import { uploadIdSchema, UploadIdDto } from "./dto/upload-id.dto";
 import { uploadProfilePhotoSchema, UploadProfilePhotoDto } from "./dto/upload-profile-photo.dto";
+import { learnerSignupSchema, LearnerSignupDto } from "./dto/learner-signup.dto";
 
 @Controller("auth")
 export class AuthController {
@@ -48,6 +49,12 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(institutionAdminSignupSchema))
   async signupInstitutionAdmin(@Body() signupDto: InstitutionAdminSignupDto) {
     return this.authService.signupInstitutionAdmin(signupDto);
+  }
+
+  @Post("learner/signup")
+  @UsePipes(new ZodValidationPipe(learnerSignupSchema))
+  async signupLearner(@Body() signupDto: LearnerSignupDto) {
+    return this.authService.signupLearner(signupDto);
   }
 
   @Post("send-otp")
