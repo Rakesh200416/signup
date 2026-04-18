@@ -1,18 +1,18 @@
-"use client";
+ "use client";
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AuthShell from "../../../../components/auth/AuthShell";
-import OtpInput from "../../../../components/auth/OtpInput";
-import NeuInput from "../../../../components/auth/NeuInput";
-import NeuButton from "../../../../components/auth/NeuButton";
-import PasswordChecklist from "../../../../components/auth/PasswordChecklist";
-import { authApi } from "../../../../lib/api";
+import AuthShell from "../components/auth/AuthShell";
+import OtpInput from "../components/auth/OtpInput";
+import NeuInput from "../components/auth/NeuInput";
+import NeuButton from "../components/auth/NeuButton";
+import PasswordChecklist from "../components/auth/PasswordChecklist";
+import { authApi } from "../lib/api";
 
 function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const identifier = searchParams.get("identifier") || "";
+  const identifier = searchParams.get("identifier")?.trim() || "";
 
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
@@ -28,13 +28,18 @@ function ResetPasswordContent() {
       return;
     }
 
-    if (!otp || otp.length < 4) {
-      setError("Enter a valid OTP.");
+    if (!otp || otp.length !== 6) {
+      setError("Enter a valid 6-digit OTP.");
       return;
     }
 
     if (!password) {
       setError("Enter a new password.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
@@ -47,10 +52,12 @@ function ResetPasswordContent() {
       setLoading(true);
       setError("");
 
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
       await authApi.resetPassword({
-        identifier,
-        otp,
+        ...(isEmail ? { email: identifier } : { phone: identifier }),
         password,
+        confirmPassword,
+        otpCode: otp,
       });
 
       router.push("/auth/institution-admin/login");

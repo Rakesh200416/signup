@@ -2,10 +2,10 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import AuthShell from "../../../../components/auth/AuthShell";
-import NeuInput from "../../../../components/auth/NeuInput";
-import NeuButton from "../../../../components/auth/NeuButton";
-import { authApi } from "../../../../lib/api";
+import AuthShell from "../components/auth/AuthShell";
+import NeuInput from "../components/auth/NeuInput";
+import NeuButton from "../components/auth/NeuButton";
+import { authApi } from "../lib/api";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -27,12 +27,17 @@ export default function ForgotPasswordPage() {
       return;
     }
 
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedIdentifier);
+    const channel = isEmail ? "email" : "phone";
+
     try {
       setLoading(true);
       setError("");
 
-      await authApi.forgotPassword({
-        identifier: normalizedIdentifier,
+      await authApi.sendOtp({
+        channel,
+        target: normalizedIdentifier,
+        purpose: "recovery",
       });
 
       router.push(

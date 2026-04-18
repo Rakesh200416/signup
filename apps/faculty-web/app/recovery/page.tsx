@@ -1,5 +1,5 @@
-import AuthShell from "../../../../components/auth/AuthShell";
-import NeuButton from "../../../../components/auth/NeuButton";
+import AuthShell from "../components/auth/AuthShell";
+import NeuButton from "../components/auth/NeuButton";
 
 export default function RecoveryPage() {
   return (
@@ -13,9 +13,7 @@ export default function RecoveryPage() {
           failed too many times. Super Admin must reset the user ID or password.
         </div>
 
-        <NeuButton className="w-full">
-          Request Super Admin Reset
-        </NeuButton>
+        <NeuButton className="w-full">Request Super Admin Reset</NeuButton>
       </div>
     </AuthShell>
   );

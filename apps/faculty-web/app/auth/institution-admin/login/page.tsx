@@ -1,12 +1,13 @@
 "use client";
 
+import axios from "axios";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import AuthShell from "../../../components/auth/AuthShell";
 import AuthAlert from "../../../components/auth/AuthAlert";
 import NeuInput from "../../../components/auth/NeuInput";
 import NeuButton from "../../../components/auth/NeuButton";
-import { authApi } from "../../../lib/api";
+import { authApi, extractApiErrorMessage } from "../../../lib/api";
 import { ROLES } from "../../../lib/constants";
 import { validateLoginForm } from "../../../lib/validators";
 
@@ -37,13 +38,26 @@ export default function InstitutionAdminLoginPage() {
       });
 
       if (response.requiresMfa) {
+        try {
+          sessionStorage.setItem(
+            "pendingMfaLogin",
+            JSON.stringify({ identifier, password, role: ROLES.INSTITUTION_ADMIN })
+          );
+        } catch {
+          // Ignore storage failures; continue to MFA page.
+        }
         router.push("/auth/institution-admin/mfa-verify");
         return;
       }
 
       router.push("/institution-admin/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed.");
+      const message = axios.isAxiosError(err)
+        ? extractApiErrorMessage(err)
+        : err instanceof Error
+        ? err.message
+        : "Login failed.";
+      setError(message);
     } finally {
       setLoading(false);
     }

@@ -2,10 +2,10 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import AuthShell from "../../../../components/auth/AuthShell";
-import OtpInput from "../../../../components/auth/OtpInput";
-import NeuButton from "../../../../components/auth/NeuButton";
-import { authApi } from "../../../../lib/api";
+import AuthShell from "../components/auth/AuthShell";
+import OtpInput from "../components/auth/OtpInput";
+import NeuButton from "../components/auth/NeuButton";
+import { authApi } from "../lib/api";
 
 function VerifyEmailContent() {
   const router = useRouter();

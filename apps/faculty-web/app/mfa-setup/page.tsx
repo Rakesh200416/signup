@@ -2,10 +2,10 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AuthShell from "../../../../components/auth/AuthShell";
-import OtpInput from "../../../../components/auth/OtpInput";
-import NeuButton from "../../../../components/auth/NeuButton";
-import { authApi } from "../../../../lib/api";
+import AuthShell from "../components/auth/AuthShell";
+import OtpInput from "../components/auth/OtpInput";
+import NeuButton from "../components/auth/NeuButton";
+import { authApi } from "../lib/api";
 
 function MfaSetupContent() {
   const router = useRouter();
@@ -20,6 +20,19 @@ function MfaSetupContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  if (!email) {
+    return (
+      <AuthShell
+        title="QR / MFA Setup"
+        subtitle="Missing email for MFA setup."
+      >
+        <p className="text-sm text-red-600">
+          No email address was provided. Please restart the signup or login flow to continue.
+        </p>
+      </AuthShell>
+    );
+  }
+
   async function handleGenerateQr() {
     if (!email) {
       setError("Missing email for MFA setup.");
@@ -28,6 +41,11 @@ function MfaSetupContent() {
 
     if (!password) {
       setError("Enter your account password to generate the MFA QR code.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
@@ -70,7 +88,7 @@ function MfaSetupContent() {
 
       await authApi.verifyMfa({
         email,
-        otp,
+        totpCode: otp,
       });
 
       router.push("/auth/institution-admin/success");

@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import AuthShell from "../../../../components/auth/AuthShell";
-import NeuButton from "../../../../components/auth/NeuButton";
+import AuthShell from "../components/auth/AuthShell";
+import NeuButton from "../components/auth/NeuButton";
 
 export default function SuccessPage() {
   const router = useRouter();

@@ -17,7 +17,11 @@ export default function AuthAlert({ type, message }: AuthAlertProps) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    setVisible(true);
+    const timer = window.setTimeout(() => {
+      setVisible(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [message]);
 
   if (!visible) {

@@ -1,5 +1,5 @@
 import { NestFactory, Reflector } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
+import { ValidationPipe, BadRequestException } from "@nestjs/common";
 import { ThrottlerGuard, ThrottlerStorage } from "@nestjs/throttler";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
@@ -14,6 +14,13 @@ async function bootstrap() {
   app.set("trust proxy", 1);
   app.use(helmet());
   app.use(cookieParser());
+  
+  // Add request logging middleware
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url} - Origin: ${req.headers.origin || 'none'}`);
+    next();
+  });
+  
   const frontendUrl = (process.env.FRONTEND_URL ?? "http://localhost:3000").replace(/\/$/, "");
   const allowedOrigins = [frontendUrl, "http://localhost:3000", "http://127.0.0.1:3000"];
   app.enableCors({
@@ -45,6 +52,10 @@ async function bootstrap() {
       whitelist: true,
       transform: true,
       forbidNonWhitelisted: true,
+      exceptionFactory: (errors) => {
+        console.log('Validation errors:', JSON.stringify(errors, null, 2));
+        return new BadRequestException(errors);
+      },
     }),
   );
 

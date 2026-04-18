@@ -8,7 +8,7 @@ import AuthAlert from "../components/auth/AuthAlert";
 import NeuInput from "../components/auth/NeuInput";
 import NeuButton from "../components/auth/NeuButton";
 import PasswordChecklist from "../components/auth/PasswordChecklist";
-import { authApi } from "../lib/api";
+import { authApi, extractApiErrorMessage } from "../lib/api";
 
 export default function InstitutionAdminSignupPage() {
   const router = useRouter();
@@ -75,12 +75,7 @@ export default function InstitutionAdminSignupPage() {
         officialEmail: email,
         officialPhone: form.officialPhone,
         password: form.password,
-      });
-
-      await authApi.sendOtp({
-        channel: "email",
-        target: email,
-        purpose: "signup_email",
+        confirmPassword: form.confirmPassword,
       });
 
       router.push(
@@ -93,11 +88,11 @@ export default function InstitutionAdminSignupPage() {
         setMessage("This email is already registered. Try signing in or use another official email.");
       } else {
         const message = axios.isAxiosError(err)
-          ? err.response?.data?.message || err.message
-          : err instanceof Error
-          ? err.message
-          : "We hit a snag while creating your account. Please try again.";
-        setMessage(message);
+        ? extractApiErrorMessage(err)
+        : err instanceof Error
+        ? err.message
+        : "We hit a snag while creating your account. Please try again.";
+      setMessage(message);
       }
       setMessageType("error");
     } finally {

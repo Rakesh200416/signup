@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import AuthShell from "../../../../components/auth/AuthShell";
-import NeuInput from "../../../../components/auth/NeuInput";
-import NeuButton from "../../../../components/auth/NeuButton";
-import { authApi } from "../../../../lib/api";
-import { ROLES } from "../../../../lib/constants";
-import { validateLoginForm } from "../../../../lib/validators";
+import AuthShell from "../components/auth/AuthShell";
+import NeuInput from "../components/auth/NeuInput";
+import NeuButton from "../components/auth/NeuButton";
+import { authApi } from "../lib/api";
+import { ROLES } from "../lib/constants";
+import { validateLoginForm } from "../lib/validators";
 
 export default function InstitutionAdminLoginPage() {
   const router = useRouter();
@@ -36,6 +36,14 @@ export default function InstitutionAdminLoginPage() {
       });
 
       if (response.requiresMfa) {
+        try {
+          sessionStorage.setItem(
+            "pendingMfaLogin",
+            JSON.stringify({ identifier, password, role: ROLES.INSTITUTION_ADMIN })
+          );
+        } catch {
+          // Ignore storage failures; continue to MFA page.
+        }
         router.push("/auth/institution-admin/mfa-verify");
         return;
       }

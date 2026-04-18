@@ -7,7 +7,7 @@ import AuthAlert from "../../../components/auth/AuthAlert";
 import OtpInput from "../../../components/auth/OtpInput";
 import NeuButton from "../../../components/auth/NeuButton";
 import VerificationMethodSelect from "../../../components/auth/VerificationMethodSelect";
-import { authApi } from "../../../lib/api";
+import { authApi, extractApiErrorMessage } from "../../../lib/api";
 
 function VerifyMobileContent() {
   const router = useRouter();
@@ -52,13 +52,18 @@ function VerifyMobileContent() {
         otp,
       });
 
+      if (!email) {
+        setError("Missing email. Please restart the verification flow.");
+        return;
+      }
+
       router.push(`/auth/institution-admin/mfa-setup?email=${encodeURIComponent(email)}`);
     } catch (err) {
-      const messageText = err instanceof Error ? err.message : "Incorrect code. Try again.";
-      if (typeof messageText === "string" && messageText.toLowerCase().includes("expired")) {
+      const message = extractApiErrorMessage(err);
+      if (message.toLowerCase().includes("expired")) {
         setError("This OTP has expired. Request a new one.");
       } else {
-        setError("Incorrect code. Try again.");
+        setError(message || "Incorrect code. Try again.");
       }
     } finally {
       setLoading(false);

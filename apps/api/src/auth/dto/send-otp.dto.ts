@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const sendOtpSchema = z.object({
-  channel: z.enum(["email", "phone"]),
+  channel: z.enum(["email", "phone", "mobile"]),
   target: z.string().min(1, "Target value is required."),
   purpose: z.enum(["signup_email", "signin", "recovery"]).optional(),
 });

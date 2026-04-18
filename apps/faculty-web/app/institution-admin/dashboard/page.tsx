@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import AuthShell from "../../components/auth/AuthShell";
 import NeuButton from "../../components/auth/NeuButton";
 import NeuInput from "../../components/auth/NeuInput";
 

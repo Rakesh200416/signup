@@ -13,7 +13,7 @@ import { authApi } from "../../../lib/api";
 function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const identifier = searchParams.get("identifier") || "";
+  const identifier = searchParams.get("identifier")?.trim() || "";
 
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
@@ -29,12 +29,6 @@ function ResetPasswordContent() {
       return;
     }
 
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-    if (!isEmail) {
-      setError("Password reset currently supports email recovery only.");
-      return;
-    }
-
     if (!otp || otp.length !== 6) {
       setError("Enter a valid 6-digit OTP.");
       return;
@@ -42,6 +36,11 @@ function ResetPasswordContent() {
 
     if (!password) {
       setError("Enter a new password.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
@@ -54,8 +53,9 @@ function ResetPasswordContent() {
       setLoading(true);
       setError("");
 
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
       await authApi.resetPassword({
-        email: identifier,
+        ...(isEmail ? { email: identifier } : { phone: identifier }),
         password,
         confirmPassword,
         otpCode: otp,
