@@ -2,7 +2,9 @@ import axios from "axios";
 
 const defaultApiBaseUrl =
   typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    ? window.location.hostname.includes("localhost") || window.location.hostname.includes("127.0.0.1")
+      ? `${window.location.protocol}//${window.location.hostname}:3001`
+      : "https://signup-c2z3.onrender.com" // Production backend URL
     : "http://127.0.0.1:3001";
 
 const api = axios.create({
