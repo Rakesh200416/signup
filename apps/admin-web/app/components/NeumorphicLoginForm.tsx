@@ -10,7 +10,7 @@ import { toast } from "react-hot-toast";
 import { z } from "zod";
 import { Mail, Lock, ShieldCheck, ChevronDown, CircleCheckBig, CircleAlert } from "lucide-react";
 import { DropdownSelect } from "./DropdownSelect";
-import api from "../lib/api";
+import api, { extractApiErrorMessage } from "../lib/api";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -44,12 +44,7 @@ const secondaryButton =
   "w-full rounded-[18px] border border-white/80 bg-[#e6e7ee] px-5 py-3 text-sm font-medium text-[#273457] shadow-[6px_6px_12px_#c8c9d1,-6px_-6px_12px_#ffffff] transition duration-300 hover:-translate-y-0.5 hover:shadow-[8px_8px_16px_rgba(200,201,209,0.28),-8px_-8px_16px_rgba(255,255,255,0.82)] active:translate-y-0.5 active:shadow-[inset_2px_2px_5px_rgba(200,201,209,0.75),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] disabled:cursor-not-allowed disabled:opacity-70";
 
 function getToastMessage(error: unknown, fallback: string) {
-  if (typeof error === "string") return error;
-  if (!error || typeof error !== "object") return fallback;
-  const err = error as { message?: string; response?: { data?: { message?: string | string[] } } };
-  const message = err.response?.data?.message ?? err.message;
-  if (Array.isArray(message)) return message.join(", ");
-  return typeof message === "string" ? message : fallback;
+  return extractApiErrorMessage(error, fallback);
 }
 
 interface Props {

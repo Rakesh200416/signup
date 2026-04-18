@@ -7,7 +7,7 @@ import OtpInput from "../components/auth/OtpInput";
 import NeuInput from "../components/auth/NeuInput";
 import NeuButton from "../components/auth/NeuButton";
 import PasswordChecklist from "../components/auth/PasswordChecklist";
-import { authApi } from "../lib/api";
+import { authApi, extractApiErrorMessage } from "../lib/api";
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -62,9 +62,8 @@ function ResetPasswordContent() {
 
       router.push("/auth/institution-admin/login");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to reset password."
-      );
+      const message = extractApiErrorMessage(err);
+      setError(message);
     } finally {
       setLoading(false);
     }

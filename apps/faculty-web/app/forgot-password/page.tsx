@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import AuthShell from "../components/auth/AuthShell";
 import NeuInput from "../components/auth/NeuInput";
 import NeuButton from "../components/auth/NeuButton";
-import { authApi } from "../lib/api";
+import { authApi, extractApiErrorMessage } from "../lib/api";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -46,11 +46,8 @@ export default function ForgotPasswordPage() {
         )}`
       );
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to initiate password reset."
-      );
+      const message = extractApiErrorMessage(err);
+      setError(message);
     } finally {
       setLoading(false);
     }

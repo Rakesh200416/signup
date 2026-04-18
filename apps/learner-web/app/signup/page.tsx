@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ChangeEvent, type CSSProperties, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import NeumorphicInput from "../components/NeumorphicInput";
-import NeumorphicButton from "../components/NeumorphicButton";
 import CheckboxGroup from "../components/CheckboxGroup";
 import {
   validateEmail,
@@ -42,7 +41,7 @@ export default function SignUp() {
       setAlert("");
 
       // Call API to create account
-      const response = await authApi.signup({
+      await authApi.signup({
         name,
         email,
         password,
@@ -53,8 +52,20 @@ export default function SignUp() {
       setTimeout(() => {
         router.push(`/verify-otp?email=${encodeURIComponent(email)}`);
       }, 1500);
-    } catch (error: any) {
-      setAlert(error.message || "Failed to create account. Please try again.");
+    } catch (error: unknown) {
+      let errorMessage = error instanceof Error ? error.message : "Failed to create account. Please try again.";
+      
+      // Enhanced 409/401 handling
+      if (errorMessage.includes("409") || errorMessage.includes("already exists") || errorMessage.includes("Conflict")) {
+        errorMessage = "An account with this email already exists. Please sign in instead.";
+        setTimeout(() => {
+          router.push(`/signin?email=${encodeURIComponent(email)}`);
+        }, 3000);
+      } else if (errorMessage.includes("401") || errorMessage.includes("Unauthorized")) {
+        errorMessage = "Signup temporarily unavailable. Please try again or contact support.";
+      }
+      
+      setAlert(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -73,14 +84,14 @@ export default function SignUp() {
           <NeumorphicInput
             placeholder="Name"
             value={name}
-            onChange={(e: any) => setName(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
             disabled={loading}
           />
 
           <NeumorphicInput
             placeholder="Email"
             value={email}
-            onChange={(e: any) => setEmail(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
             disabled={loading}
           />
 
@@ -88,7 +99,7 @@ export default function SignUp() {
             placeholder="Password"
             type="password"
             value={password}
-            onChange={(e: any) => setPassword(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
             disabled={loading}
           />
         </div>
@@ -103,25 +114,25 @@ export default function SignUp() {
           style={styles.button}
           onClick={handleSubmit}
           disabled={loading}
-          onMouseDown={(e) => {
+          onMouseDown={(e: MouseEvent<HTMLButtonElement>) => {
             if (!loading) {
               e.currentTarget.style.transform = "scale(0.96)";
               e.currentTarget.style.boxShadow =
                 "inset 6px 6px 12px #c5ccd6, inset -6px -6px 12px #ffffff";
             }
           }}
-          onMouseUp={(e) => {
+          onMouseUp={(e: MouseEvent<HTMLButtonElement>) => {
             e.currentTarget.style.transform = "scale(1)";
             e.currentTarget.style.boxShadow =
               "8px 8px 16px #c5ccd6, -8px -8px 16px #ffffff";
           }}
-          onMouseEnter={(e) => {
+          onMouseEnter={(e: MouseEvent<HTMLButtonElement>) => {
             if (!loading) {
               e.currentTarget.style.boxShadow =
                 "10px 10px 22px #c5ccd6, -10px -10px 22px #ffffff";
             }
           }}
-          onMouseLeave={(e) => {
+          onMouseLeave={(e: MouseEvent<HTMLButtonElement>) => {
             e.currentTarget.style.boxShadow =
               "8px 8px 16px #c5ccd6, -8px -8px 16px #ffffff";
           }}
@@ -140,7 +151,7 @@ export default function SignUp() {
 
 /* ---------------- STYLES ---------------- */
 
-const styles: any = {
+const styles: Record<string, CSSProperties> = {
   wrapper: {
     minHeight: "100vh",
     display: "flex",

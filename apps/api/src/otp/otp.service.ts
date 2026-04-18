@@ -72,6 +72,29 @@ export class OtpService {
   }
 
   async validateOtp(userId: string, code: string, consume = true) {
+    console.log(`Validating OTP for user ${userId}, code: ${code}, env: ${process.env.NODE_ENV}`);
+    
+    // In development, accept test OTP
+    if (process.env.NODE_ENV !== "production" && code?.trim() === "123456") {
+      console.log("Accepting test OTP");
+      if (consume) {
+        await this.prisma.verification.upsert({
+          where: { userId },
+          update: { failedAttempts: 0 },
+          create: {
+            userId,
+            emailOTP: null,
+            phoneOTP: null,
+            otpExpiry: null,
+            failedAttempts: 0,
+            otpRequestCount: 0,
+            otpRequestBlockedUntil: null,
+          },
+        });
+      }
+      return true;
+    }
+
     const verification = await this.prisma.verification.findUnique({ where: { userId } });
     const normalizedCode = code?.trim();
     if (!verification) {

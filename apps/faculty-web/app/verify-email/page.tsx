@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import AuthShell from "../components/auth/AuthShell";
 import OtpInput from "../components/auth/OtpInput";
 import NeuButton from "../components/auth/NeuButton";
-import { authApi } from "../lib/api";
+import { authApi, extractApiErrorMessage } from "../lib/api";
 
 function VerifyEmailContent() {
   const router = useRouter();
@@ -41,7 +41,8 @@ function VerifyEmailContent() {
         )}&email=${encodeURIComponent(email)}`
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Email OTP verification failed.");
+      const message = extractApiErrorMessage(err);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -58,7 +59,8 @@ function VerifyEmailContent() {
         purpose: "signup_email",
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to resend OTP.");
+      const message = extractApiErrorMessage(err);
+      setError(message);
     } finally {
       setLoading(false);
     }

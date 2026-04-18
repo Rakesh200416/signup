@@ -72,14 +72,14 @@ function VerifyOTPContent() {
         }, 1200);
       } else {
         await authApi.verifyOTP({ email, otp });
-        showAlert("Email verified successfully! Redirecting to dashboard...", "success");
+        showAlert("Email verified successfully! You can now sign in.", "success");
 
         setTimeout(() => {
-          router.push("/dashboard");
+          router.push("/signin");
         }, 1000);
       }
-    } catch (error: any) {
-      showAlert(error.message || "OTP verification failed. Please try again.", "error");
+    } catch (error: unknown) {
+      showAlert(error instanceof Error ? error.message : "OTP verification failed. Please try again.", "error");
     } finally {
       setLoading(false);
     }
@@ -102,13 +102,13 @@ function VerifyOTPContent() {
       await authApi.sendOtp({
         channel: isEmail ? "email" : "phone",
         target: identifier,
-        purpose: pendingReset ? "recovery" : "signin",
+        purpose: pendingReset ? "recovery" : "signup_email",
       });
 
       showAlert("Verification code sent successfully!", "success");
       setCountdown(30);
-    } catch (error: any) {
-      showAlert(error.message || "Failed to resend OTP. Please try again.", "error");
+    } catch (error: unknown) {
+      showAlert(error instanceof Error ? error.message : "Failed to resend OTP. Please try again.", "error");
     } finally {
       setResendLoading(false);
     }

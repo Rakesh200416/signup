@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { authApi } from "../lib/api";
 
@@ -30,14 +30,39 @@ export default function SignIn() {
       setLoading(true);
       setAlert("");
 
-      const response = await authApi.login({ email, password });
+      await authApi.login({ email, password });
       showAlert("You are in. Welcome aboard.");
 
       setTimeout(() => {
         router.push("/dashboard");
       }, 1000);
-    } catch (error: any) {
-      showAlert(error.message || "Login failed. Please try again.");
+    } catch (error: unknown) {
+      let errorMessage = error instanceof Error ? error.message : "Login failed. Please try again.";
+      
+      // Enhanced user-friendly error handling
+      if (errorMessage.includes("401") || errorMessage.toLowerCase().includes("unauthorized")) {
+        errorMessage = "The email or password you entered is incorrect. Please check your credentials and try again. If you don't have an account, please create one first.";
+      } else if (errorMessage.toLowerCase().includes("no account") || errorMessage.toLowerCase().includes("user not found") || errorMessage.toLowerCase().includes("account not found")) {
+        errorMessage = "No account found with this email. Please create an account first or check your email address.";
+      } else if (errorMessage.toLowerCase().includes("verification")) {
+        errorMessage = "Your account needs to be verified. Please check your email for the verification link.";
+        setTimeout(() => {
+          router.push(`/verify-otp?email=${encodeURIComponent(email)}`);
+        }, 2000);
+        return;
+      } else if (errorMessage.toLowerCase().includes("locked")) {
+        errorMessage = "Your account has been temporarily locked due to multiple failed attempts. Please wait a few minutes and try again, or reset your password.";
+      } else if (errorMessage.includes("409") || errorMessage.toLowerCase().includes("conflict")) {
+        errorMessage = "This email is already registered. Please sign in or reset your password.";
+      } else if (errorMessage.includes("400") || errorMessage.toLowerCase().includes("bad request")) {
+        errorMessage = "Please check your input and try again. Some fields may be missing or incorrect.";
+      } else if (errorMessage.includes("500") || errorMessage.toLowerCase().includes("internal server")) {
+        errorMessage = "Something went wrong on our end. Please try again later.";
+      } else if (errorMessage.includes("Request failed")) {
+        errorMessage = "Unable to connect to the server. Please check your internet connection and try again.";
+      }
+      
+      showAlert(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -93,13 +118,13 @@ export default function SignIn() {
     color: "#444",
   };
 
-  const hoverIn = (e: any) => {
+  const hoverIn = (e: MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.style.boxShadow =
       "inset 6px 6px 12px #c5ccd6, inset -6px -6px 12px #ffffff";
     e.currentTarget.style.transform = "scale(0.98)";
   };
 
-  const hoverOut = (e: any) => {
+  const hoverOut = (e: MouseEvent<HTMLButtonElement>) => {
     if (!loading) {
       e.currentTarget.style.boxShadow =
         "8px 8px 16px #c5ccd6, -8px -8px 16px #ffffff";
@@ -107,13 +132,13 @@ export default function SignIn() {
     }
   };
 
-  const pressEffect = (e: any) => {
+  const pressEffect = (e: MouseEvent<HTMLButtonElement>) => {
     if (!loading) {
       e.currentTarget.style.transform = "scale(0.95)";
     }
   };
 
-  const releaseEffect = (e: any) => {
+  const releaseEffect = (e: MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.style.transform = "scale(1)";
   };
 

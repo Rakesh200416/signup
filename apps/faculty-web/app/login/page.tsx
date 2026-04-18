@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import AuthShell from "../components/auth/AuthShell";
 import NeuInput from "../components/auth/NeuInput";
 import NeuButton from "../components/auth/NeuButton";
-import { authApi } from "../lib/api";
+import { authApi, extractApiErrorMessage } from "../lib/api";
 import { ROLES } from "../lib/constants";
 import { validateLoginForm } from "../lib/validators";
 
@@ -50,7 +50,8 @@ export default function InstitutionAdminLoginPage() {
 
       router.push("/institution-admin/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed.");
+      const message = extractApiErrorMessage(err);
+      setError(message);
     } finally {
       setLoading(false);
     }

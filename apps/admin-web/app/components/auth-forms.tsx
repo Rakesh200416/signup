@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "react-hot-toast";
-import api from "../lib/api";
+import api, { extractApiErrorMessage } from "../lib/api";
 import { Mail, Lock, Phone, User, ShieldCheck } from "lucide-react";
 import { NeumorphicButton } from "./NeumorphicButton";
 import { NeumorphicCard } from "./NeumorphicCard";
@@ -16,18 +16,7 @@ import { DropdownSelect } from "./DropdownSelect";
 import { z } from "zod";
 
 const getToastMessage = (error: unknown, fallback: string) => {
-  if (typeof error === "string") return error;
-  if (typeof error === "number" || typeof error === "boolean") return String(error);
-  if (!error || typeof error !== "object") return fallback;
-
-  const err = error as any;
-  const message = err?.response?.data?.message ?? err?.message ?? err?.response?.data ?? err?.response ?? err;
-  if (typeof message === "string") return message;
-  try {
-    return JSON.stringify(message);
-  } catch {
-    return fallback;
-  }
+  return extractApiErrorMessage(error, fallback);
 };
 
 const loginSchema = z.object({

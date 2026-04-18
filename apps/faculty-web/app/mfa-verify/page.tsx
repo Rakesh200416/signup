@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import AuthShell from "../components/auth/AuthShell";
 import OtpInput from "../components/auth/OtpInput";
 import NeuButton from "../components/auth/NeuButton";
-import { authApi } from "../lib/api";
+import { authApi, extractApiErrorMessage } from "../lib/api";
 import { validateMfaCode } from "../lib/validators";
 
 export default function MfaVerifyPage() {
@@ -63,7 +63,8 @@ export default function MfaVerifyPage() {
       sessionStorage.removeItem("pendingMfaLogin");
       router.push("/institution-admin/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "MFA verification failed.");
+      const message = extractApiErrorMessage(err);
+      setError(message);
     } finally {
       setLoading(false);
     }

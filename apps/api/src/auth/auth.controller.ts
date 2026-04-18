@@ -51,6 +51,12 @@ export class AuthController {
     return this.authService.signupInstitutionAdmin(signupDto);
   }
 
+  @Post("coordinator/signup")
+  @UsePipes(new ZodValidationPipe(institutionAdminSignupSchema))
+  async signupCoordinator(@Body() signupDto: InstitutionAdminSignupDto) {
+    return this.authService.signupCoordinator(signupDto);
+  }
+
   @Post("learner/signup")
   @UsePipes(new ZodValidationPipe(learnerSignupSchema))
   async signupLearner(@Body() signupDto: LearnerSignupDto) {

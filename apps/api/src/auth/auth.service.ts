@@ -264,9 +264,39 @@ export class AuthService {
     };
   }
 
+  async signupCoordinator(signupDto: InstitutionAdminSignupDto) {
+    const existing = await this.userService.findByEmail(signupDto.officialEmail);
+    if (existing) {
+      throw new ConflictException("A user with this official email already exists.");
+    }
+
+    const passwordHash = await this.hashValue(signupDto.password);
+    const user = await this.userService.createCoordinator({
+      name: `${signupDto.firstName} ${signupDto.lastName}`,
+      email: signupDto.officialEmail,
+      password: passwordHash,
+      profile: {
+        phonePrimary: signupDto.officialPhone,
+        googleId: signupDto.googleId ?? null,
+        ipWhitelist: [],
+      },
+    });
+
+    const { code: otpCode } = await this.otpService.createOtpForUser(user.id, OtpDeliveryMethod.EMAIL, user.email);
+    await this.emailService.sendOtpEmail(user.email, otpCode, "Signup");
+
+    return {
+      message: "Coordinator account created. Verify the email OTP to complete setup.",
+      userId: user.id,
+      status: "PENDING_VERIFICATION",
+    };
+  }
+
   async signupLearner(signupDto: LearnerSignupDto) {
+    console.error(`[409 DEBUG] Learner signup attempt for email: ${signupDto.email}`);
     const existing = await this.userService.findByEmail(signupDto.email);
     if (existing) {
+      console.error(`[409 DEBUG] Duplicate email found: ${signupDto.email}`);
       throw new ConflictException("An account with this email already exists.");
     }
 
@@ -376,7 +406,8 @@ export class AuthService {
     }
 
     // In production, require captcha and terms. In development, make them optional.
-    if (isProduction && (!loginDto.acceptTerms || !loginDto.captchaToken)) {
+    if (isProduction && (!loginDto.acceptTerms || !loginDto.captchaToken || loginDto.captchaToken === "test-token")) {
+      console.error(`[401 DEBUG] Login rejected - production mode, invalid captcha: "${loginDto.captchaToken}", terms: ${loginDto.acceptTerms}, ip: ${ip}`);
       await this.recordLoginAttempt(user.id, user.email, false, "Missing terms or captcha", ip, userAgent);
       throw new BadRequestException("Captcha and terms acceptance are required.");
     }
