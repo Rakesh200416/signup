@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "react-hot-toast";
-import { Mail, Lock } from "lucide-react";
+import { Mail, Lock, ShieldCheck } from "lucide-react";
 import api from "../lib/api";
 import { NeumorphicButton } from "../components/NeumorphicButton";
 import { NeumorphicCard } from "../components/NeumorphicCard";
@@ -18,7 +18,7 @@ const resetPasswordSchema = z
     email: z.string().email("Please enter a valid email."),
     password: z.string().min(8, "Password must be at least 8 characters."),
     confirmPassword: z.string().min(8, "Confirm your password."),
-    otpCode: z.string().min(6, "Enter the 6-digit OTP code.").max(6, "OTP code must be 6 digits."),
+    otpCode: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.password !== data.confirmPassword) {
@@ -35,12 +35,16 @@ type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
 export default function ResetPasswordClient() {
   const router = useRouter();
   const [otpRequested, setOtpRequested] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [isRequestingOtp, setIsRequestingOtp] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [otpContext, setOtpContext] = useState<{ email: string; password: string; confirmPassword: string } | null>(null);
 
   const {
     register,
     handleSubmit,
+    setValue,
     watch,
     formState: { errors },
   } = useForm<ResetPasswordForm>({
@@ -49,9 +53,23 @@ export default function ResetPasswordClient() {
   });
 
   const inputWrapperClass =
-    "flex items-center gap-3 rounded-[20px] border border-[#dee3ee] bg-[#edf1f8] px-4 py-3 shadow-[inset_2px_2px_5px_rgba(200,201,209,0.6),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] transition duration-200 ease-out hover:border-[#c6d0ff] hover:shadow-[inset_2px_2px_9px_rgba(200,201,209,0.5),inset_-2px_-2px_9px_rgba(255,255,255,0.95)] focus-within:border-[#7c8bff] focus-within:shadow-[inset_2px_2px_5px_rgba(176,184,204,0.45),inset_-2px_-2px_5px_rgba(255,255,255,0.95),0_0_0_4px_rgba(98,114,255,0.12)]";
+    "grid grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-[#d1d9e6] bg-[#e6e8ee] shadow-[inset_2px_2px_5px_#b8b9be,inset_-3px_-3px_7px_#ffffff] transition duration-300 focus-within:ring-2 focus-within:ring-[#8ec9ff]/40";
+
+  const iconCellClass =
+    "flex items-center justify-center border-r border-[#d1d9e6] text-[#5c6d94]";
+
+  const inputClass =
+    "w-full bg-transparent px-4 py-3 text-sm text-[#273457] outline-none placeholder:text-[#8e97b2]";
 
   const password = watch("password") || "";
+  const confirmPassword = watch("confirmPassword") || "";
+  const otpCode = watch("otpCode") || "";
+  const email = watch("email") || "";
+
+  const shouldShowPolicy = password.length > 0;
+  const bothPasswordsTyped = password.length > 0 && confirmPassword.length > 0;
+  const passwordsMatch = bothPasswordsTyped && password === confirmPassword;
+
   const passwordPolicyRules = [
     {
       id: "length",
@@ -81,14 +99,28 @@ export default function ResetPasswordClient() {
   ];
 
   const passwordValidCount = passwordPolicyRules.filter((rule) => rule.isValid).length;
+  const passwordPolicyPassed = passwordValidCount === passwordPolicyRules.length;
   const passwordStrength =
     passwordValidCount === 5
-      ? { label: "Strong", emoji: "🟢", tone: "bg-[#e6f6e6] text-[#2f6f35] border-[#bceab3]" }
+      ? { label: "Strong", tone: "bg-[#e6f6e6] text-[#2f6f35] border-[#bceab3]" }
       : passwordValidCount >= 3
-      ? { label: "Medium", emoji: "🟡", tone: "bg-[#fff7df] text-[#a8791f] border-[#f4dd8d]" }
-      : { label: "Weak", emoji: "🔴", tone: "bg-[#fbeaea] text-[#9b3e42] border-[#e9c3c5]" };
+      ? { label: "Medium", tone: "bg-[#fff7df] text-[#a8791f] border-[#f4dd8d]" }
+      : { label: "Weak", tone: "bg-[#fbeaea] text-[#9b3e42] border-[#e9c3c5]" };
 
-  const email = watch("email");
+  const canAskOtp = useMemo(() => {
+    return email.trim().length > 0 && bothPasswordsTyped && passwordsMatch && passwordPolicyPassed;
+  }, [email, bothPasswordsTyped, passwordsMatch, passwordPolicyPassed]);
+
+  useEffect(() => {
+    if (!otpContext) return;
+    const emailChanged = otpContext.email !== email.trim();
+    const pwdChanged = otpContext.password !== password;
+    const confirmChanged = otpContext.confirmPassword !== confirmPassword;
+    if (emailChanged || pwdChanged || confirmChanged) {
+      setOtpVerified(false);
+      setOtpContext(null);
+    }
+  }, [email, password, confirmPassword, otpContext]);
 
   const fetchCsrfToken = async () => {
     const response = await api.get("/auth/csrf-token");
@@ -96,9 +128,24 @@ export default function ResetPasswordClient() {
   };
 
   const requestOtp = async () => {
-    const normalizedEmail = email?.trim();
+    const normalizedEmail = email.trim();
     if (!normalizedEmail) {
       toast.error("Enter your email to receive the password reset OTP.");
+      return;
+    }
+
+    if (!bothPasswordsTyped) {
+      toast.error("Enter new password and confirm password before requesting OTP.");
+      return;
+    }
+
+    if (!passwordsMatch) {
+      toast.error("Passwords must match before requesting OTP.");
+      return;
+    }
+
+    if (!passwordPolicyPassed) {
+      toast.error("Password policy is not complete. Please satisfy all rules first.");
       return;
     }
 
@@ -110,8 +157,16 @@ export default function ResetPasswordClient() {
         { email: normalizedEmail, method: "email", purpose: "recovery" },
         { headers: { "X-CSRF-Token": csrfToken } },
       );
-      toast.success(response.data.message || "OTP sent to your email.");
+
+      if (response.data?.devOtp) {
+        setValue("otpCode", response.data.devOtp);
+        toast.success(`[DEV] OTP auto-filled: ${response.data.devOtp}`);
+      } else {
+        toast.success(response.data.message || "OTP sent to your email.");
+      }
+
       setOtpRequested(true);
+      setOtpVerified(false);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Failed to send OTP.");
     } finally {
@@ -119,7 +174,46 @@ export default function ResetPasswordClient() {
     }
   };
 
+  const verifyOtp = async () => {
+    const normalizedEmail = email.trim();
+    const normalizedOtp = otpCode.trim();
+
+    if (!otpRequested) {
+      toast.error("Send OTP first.");
+      return;
+    }
+
+    if (normalizedOtp.length !== 6) {
+      toast.error("Enter the 6-digit OTP code.");
+      return;
+    }
+
+    try {
+      setIsVerifyingOtp(true);
+      const csrfToken = await fetchCsrfToken();
+      await api.post(
+        "/auth/verify-otp",
+        { email: normalizedEmail, otpCode: normalizedOtp, purpose: "recovery" },
+        { headers: { "X-CSRF-Token": csrfToken } },
+      );
+
+      setOtpVerified(true);
+      setOtpContext({ email: normalizedEmail, password, confirmPassword });
+      toast.success("OTP matched and verified successfully.");
+    } catch (error: any) {
+      setOtpVerified(false);
+      toast.error(error?.response?.data?.message || "Invalid OTP. Please try again.");
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
   const onSubmit = async (values: ResetPasswordForm) => {
+    if (!otpVerified) {
+      toast.error("Please verify OTP before updating password.");
+      return;
+    }
+
     try {
       setIsResetting(true);
       const csrfToken = await fetchCsrfToken();
@@ -129,12 +223,15 @@ export default function ResetPasswordClient() {
           email: values.email.trim(),
           password: values.password,
           confirmPassword: values.confirmPassword,
-          otpCode: values.otpCode.trim(),
+          otpCode: (values.otpCode ?? "").trim(),
         },
         { headers: { "X-CSRF-Token": csrfToken } },
       );
-      toast.success("Password reset successful. Please sign in with your new password.");
-      router.push("/");
+
+      toast.success("Password is updated successfully.");
+      setTimeout(() => {
+        router.push("/signin");
+      }, 1200);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Password reset failed.");
     } finally {
@@ -143,7 +240,7 @@ export default function ResetPasswordClient() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#e6e7ee] text-[#273457]">
+    <main className="relative min-h-screen overflow-hidden bg-[#e6e8ee] text-[#273457]">
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute left-10 top-10 h-56 w-56 rounded-full bg-[#ffffff] blur-3xl opacity-70" />
         <div className="absolute right-12 top-28 h-60 w-60 rounded-full bg-[#d4d5dd] blur-3xl opacity-70" />
@@ -152,12 +249,12 @@ export default function ResetPasswordClient() {
 
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
         <div className="w-full max-w-2xl">
-          <NeumorphicCard className="rounded-[28px] bg-[#e6e7ee] p-8 shadow-[6px_6px_12px_rgba(200,201,209,0.35),-6px_-6px_12px_rgba(255,255,255,0.95)] sm:p-10">
+          <NeumorphicCard className="rounded-[28px] bg-[#e6e8ee] p-8 shadow-[6px_6px_12px_rgba(200,201,209,0.35),-6px_-6px_12px_rgba(255,255,255,0.95)] sm:p-10">
             <div className="mb-8 text-center">
               <p className="text-sm uppercase tracking-[0.35em] text-[#7c8db9]">Reset your password</p>
               <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[#1f2937]">Reset your password</h1>
               <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-[#565f7a]">
-                Enter your new password to continue and verify your account using the one-time code sent to your email.
+                Type your new password first. After confirmation, send and verify OTP, then update password.
               </p>
             </div>
 
@@ -165,116 +262,143 @@ export default function ResetPasswordClient() {
               <label className="space-y-3 text-sm text-[#415174]">
                 <span className="font-medium">Official email</span>
                 <div className={inputWrapperClass}>
-                  <span className="flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#e6e7ee] shadow-[inset_2px_2px_5px_rgba(200,201,209,0.6),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] text-[#69718a]">
+                  <span className={iconCellClass}>
                     <Mail className="h-5 w-5" />
                   </span>
                   <input
                     type="email"
                     placeholder="example@company.com"
                     {...register("email")}
-                    className="w-full border-0 bg-transparent text-sm text-[#273457] placeholder:text-[#8e97b2] outline-none"
+                    className={inputClass}
                   />
                 </div>
                 <p className="min-h-[1rem] text-xs text-[#c45353] transition duration-200">{errors.email?.message as string}</p>
               </label>
 
-              <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-                <label className="space-y-3 text-sm text-[#415174]">
-                  <span className="font-medium">OTP code</span>
-                  <div className={inputWrapperClass}>
-                    <span className="flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#e6e7ee] shadow-[inset_2px_2px_5px_rgba(200,201,209,0.6),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] text-[#69718a]">
-                      <Lock className="h-5 w-5" />
-                    </span>
-                    <input
-                      type="tel"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      placeholder="123456"
-                      {...register("otpCode")}
-                      className="w-full border-0 bg-transparent text-sm text-[#273457] placeholder:text-[#8e97b2] outline-none"
-                    />
-                  </div>
-                  <p className="min-h-[1rem] text-xs text-[#c45353] transition duration-200">{errors.otpCode?.message as string}</p>
-                </label>
-                <NeumorphicButton
-                  type="button"
-                  className="h-14 w-full max-w-[200px] whitespace-nowrap"
-                  onClick={requestOtp}
-                  disabled={isRequestingOtp}
-                >
-                  {otpRequested ? "Resend OTP" : "Send OTP"}
-                </NeumorphicButton>
-              </div>
-
               <label className="space-y-3 text-sm text-[#415174]">
                 <span className="font-medium">New password</span>
                 <div className={inputWrapperClass}>
-                  <span className="flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#e6e7ee] shadow-[inset_2px_2px_5px_rgba(200,201,209,0.6),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] text-[#69718a]">
+                  <span className={iconCellClass}>
                     <Lock className="h-5 w-5" />
                   </span>
                   <input
                     type="password"
                     placeholder="••••••••"
                     {...register("password")}
-                    className="w-full border-0 bg-transparent text-sm text-[#273457] placeholder:text-[#8e97b2] outline-none"
+                    className={inputClass}
                   />
                 </div>
-                <div className="mt-4 rounded-[16px] border border-[#c8c9d1] bg-[#e6e7ee] p-4 shadow-[inset_2px_2px_5px_rgba(200,201,209,0.35),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] transition duration-300">
-                  <p className="mb-3 text-sm font-medium text-[#4f5f9f]">Password policy</p>
-                  <div className="grid gap-2">
-                    {passwordPolicyRules.map((rule) => (
-                      <div
-                        key={rule.id}
-                        className={
-                          `flex items-center gap-3 rounded-[14px] px-3 py-2 transition-colors duration-300 ${
+
+                {shouldShowPolicy && (
+                  <div className="mt-4 rounded-[18px] border border-[#d1d9e6] bg-[#e6e8ee] p-4 shadow-[inset_2px_2px_5px_#b8b9be,inset_-3px_-3px_7px_#ffffff] transition duration-300">
+                    <p className="mb-3 text-sm font-medium text-[#4f5f9f]">Password policy</p>
+                    <div className="grid gap-2">
+                      {passwordPolicyRules.map((rule) => (
+                        <div
+                          key={rule.id}
+                          className={`flex items-center gap-3 rounded-[14px] px-3 py-2 transition-colors duration-300 ${
                             rule.isValid ? "bg-[#eef8ef] text-[#2f6f35]" : "bg-[#faf0f2] text-[#8d3f4f]"
-                          }`
-                        }
-                      >
-                        <span
-                          className={
-                            `flex h-6 w-6 items-center justify-center rounded-full border text-xs transition duration-300 ${
+                          }`}
+                        >
+                          <span
+                            className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs transition duration-300 ${
                               rule.isValid
                                 ? "border-[#bde5bc] bg-[#f4fbf4] text-[#2f6f35]"
                                 : "border-[#ebc7cc] bg-[#fbf1f3] text-[#a45a68]"
-                            }`
-                          }
-                        >
-                          {rule.isValid ? "✔" : "●"}
-                        </span>
-                        <span className="text-sm">{rule.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className={`mt-4 flex items-center justify-between rounded-[16px] border px-4 py-3 text-sm font-medium transition duration-300 ${passwordStrength.tone}`}>
-                    <span className="flex items-center gap-2">
-                      <span>{passwordStrength.emoji}</span>
+                            }`}
+                          >
+                            {rule.isValid ? "✔" : "●"}
+                          </span>
+                          <span className="text-sm">{rule.label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className={`mt-4 flex items-center justify-between rounded-[16px] border px-4 py-3 text-sm font-medium transition duration-300 ${passwordStrength.tone}`}>
                       <span>{passwordStrength.label}</span>
-                    </span>
-                    <span className="text-xs text-[#556785]">Strength</span>
+                      <span className="text-xs text-[#556785]">Strength</span>
+                    </div>
                   </div>
-                </div>
+                )}
+
                 <p className="min-h-[1rem] text-xs text-[#c45353] transition duration-200">{errors.password?.message as string}</p>
               </label>
 
               <label className="space-y-3 text-sm text-[#415174]">
                 <span className="font-medium">Confirm password</span>
                 <div className={inputWrapperClass}>
-                  <span className="flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#e6e7ee] shadow-[inset_2px_2px_5px_rgba(200,201,209,0.6),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] text-[#69718a]">
+                  <span className={iconCellClass}>
                     <Lock className="h-5 w-5" />
                   </span>
                   <input
                     type="password"
                     placeholder="••••••••"
                     {...register("confirmPassword")}
-                    className="w-full border-0 bg-transparent text-sm text-[#273457] placeholder:text-[#8e97b2] outline-none"
+                    className={inputClass}
                   />
                 </div>
                 <p className="min-h-[1rem] text-xs text-[#c45353] transition duration-200">{errors.confirmPassword?.message as string}</p>
               </label>
 
-              <NeumorphicButton type="submit" className="w-full" disabled={isResetting}>
-                Reset password
+              {bothPasswordsTyped && (
+                <div className="rounded-[20px] border border-[#d1d9e6] bg-[#e6e8ee] p-5 shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff]">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-[#415174] flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4" /> OTP verification
+                    </p>
+                    {otpVerified && (
+                      <span className="rounded-full border border-[#bde5bc] bg-[#eef8ef] px-3 py-1 text-xs font-semibold text-[#2f6f35]">Verified</span>
+                    )}
+                  </div>
+
+                  {!passwordsMatch && (
+                    <p className="mb-3 text-xs text-[#a45a68]">Passwords must match before requesting OTP.</p>
+                  )}
+
+                  {passwordsMatch && !passwordPolicyPassed && (
+                    <p className="mb-3 text-xs text-[#a45a68]">Complete all password policy rules before requesting OTP.</p>
+                  )}
+
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                    <div className={inputWrapperClass}>
+                      <span className={iconCellClass}>
+                        <Lock className="h-5 w-5" />
+                      </span>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        placeholder="Enter 6-digit OTP"
+                        {...register("otpCode")}
+                        className={inputClass}
+                      />
+                    </div>
+
+                    <NeumorphicButton
+                      type="button"
+                      className="h-12 w-full sm:w-auto"
+                      onClick={requestOtp}
+                      disabled={isRequestingOtp || !canAskOtp}
+                    >
+                      {otpRequested ? "Resend OTP" : "Send OTP"}
+                    </NeumorphicButton>
+                  </div>
+
+                  <p className="mt-2 min-h-[1rem] text-xs text-[#c45353] transition duration-200">{errors.otpCode?.message as string}</p>
+
+                  <NeumorphicButton
+                    type="button"
+                    className="mt-3 w-full"
+                    onClick={verifyOtp}
+                    disabled={!otpRequested || isVerifyingOtp || otpCode.trim().length !== 6}
+                  >
+                    {isVerifyingOtp ? "Verifying OTP..." : "Verify OTP"}
+                  </NeumorphicButton>
+                </div>
+              )}
+
+              <NeumorphicButton type="submit" className="w-full" disabled={isResetting || !otpVerified}>
+                {isResetting ? "Updating password..." : "Update password"}
               </NeumorphicButton>
 
               <div className="pt-1 text-center">

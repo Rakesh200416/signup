@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect } from "react";
@@ -11,7 +11,7 @@ export default function PlatformAdminSignupPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#e6e7ee] px-4 py-10 text-[#273457]">
+    <main className="min-h-screen bg-[#e6e8ee] px-4 py-10 text-[#273457]">
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-4xl items-center justify-center px-4">
         <div className="w-full">
           <div className="mb-8 rounded-[2rem] border border-white/80 bg-[#eef6ff] p-6 shadow-[24px_24px_60px_rgba(166,184,220,0.28),-24px_-24px_60px_rgba(255,255,255,0.95)] backdrop-blur-xl dark:border-white/10 dark:bg-[#14232d] dark:shadow-[24px_24px_60px_rgba(0,0,0,0.35),-24px_-24px_60px_rgba(255,255,255,0.06)]">

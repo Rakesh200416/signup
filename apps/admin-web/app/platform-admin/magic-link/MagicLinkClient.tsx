@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -50,7 +50,7 @@ export default function MagicLinkClient() {
   }, [router, searchParams]);
 
   return (
-    <main className="min-h-screen bg-[#e0e5ec] px-6 py-10 text-[#0f172a] dark:bg-[#111827] dark:text-[#f8fafc]">
+    <main className="min-h-screen bg-[#e6e8ee] px-6 py-10 text-[#0f172a] dark:bg-[#111827] dark:text-[#f8fafc]">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
         <div className="w-full max-w-2xl rounded-[2rem] border border-white/80 bg-[#eef6ff] p-10 shadow-[24px_24px_60px_rgba(166,184,220,0.28),-24px_-24px_60px_rgba(255,255,255,0.95)] dark:border-white/10 dark:bg-[#17202c] dark:shadow-[24px_24px_60px_rgba(0,0,0,0.35),-24px_-24px_60px_rgba(255,255,255,0.06)]">
           <h1 className="text-3xl font-semibold text-[#0f172a] dark:text-[#f8fafc]">Magic link verification</h1>

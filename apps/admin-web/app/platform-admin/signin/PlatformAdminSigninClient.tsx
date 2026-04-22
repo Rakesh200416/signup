@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useSearchParams } from "next/navigation";
 import { NeumorphicLoginForm } from "../../components/NeumorphicLoginForm";
@@ -9,7 +9,7 @@ export default function PlatformAdminSigninClient() {
   const initialEmail = searchParams.get("email") ?? "";
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#e6e7ee] px-4 py-10 text-[#273457]">
+    <main className="relative min-h-screen overflow-hidden bg-[#e6e8ee] px-4 py-10 text-[#273457]">
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute -left-16 top-10 h-56 w-56 rounded-full bg-[#ffffff] blur-3xl opacity-70" />
         <div className="absolute right-8 top-24 h-44 w-44 rounded-full bg-[#d4d5dd] blur-3xl opacity-75" />

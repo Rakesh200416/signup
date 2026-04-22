@@ -16,7 +16,8 @@ export const recoverSchema = z.object({
   totpCode: z.string().optional(),
   magicToken: z.string().optional(),
   alternateEmail: z.string().email().optional(),
-  govtidVerificationKey: z.string().optional(),
+  govtIdType: z.string().min(2).optional(),
+  govtIdNumber: z.string().min(4).optional(),
 });
 
 export type RecoverDto = z.infer<typeof recoverSchema>;

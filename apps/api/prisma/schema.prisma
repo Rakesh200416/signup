@@ -20,6 +20,7 @@ model User {
   id            String             @id @default(uuid())
   name          String
   email         String             @unique
+  username      String?            @unique
   password      String
   role          Role               @default(SUPER_ADMIN)
   isVerified    Boolean            @default(false)
@@ -47,6 +48,9 @@ model SuperAdminProfile {
   phonePrimary   String
   phoneSecondary String?
   backupEmail    String?
+  secondaryApproverName  String?
+  secondaryApproverEmail String?
+  secondaryApproverPhone String?
   googleId       String?
   ipWhitelist    Json?
 }

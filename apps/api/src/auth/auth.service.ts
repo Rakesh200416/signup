@@ -31,9 +31,26 @@ import { hash, verify, argon2id } from "argon2";
 import { randomUUID } from "crypto";
 import { sign } from "jsonwebtoken";
 import { jwtConstants } from "./auth.constants";
+import * as speakeasy from "speakeasy";
+import { toDataURL } from "qrcode";
 
 @Injectable()
 export class AuthService {
+  /** In-memory store for pre-signup OTP codes (no user account needed). */
+  private readonly signupOtpCache = new Map<string, { codeHash: string; expiresAt: Date }>();
+
+  /** In-memory store for pre-signup TOTP secrets (user doesn't exist yet). */
+  private readonly preSignupTotpCache = new Map<
+    string,
+    { secret: string; expiresAt: Date; verified: boolean }
+  >();
+
+  /** Short-lived cache for sign-in TOTP verifications completed just before final login. */
+  private readonly recentSigninTotpCache = new Map<string, { expiresAt: Date }>();
+
+  /** Short-lived tokens that prove a successful sign-in TOTP verification. */
+  private readonly signinTotpTokenCache = new Map<string, { email: string; expiresAt: Date }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
@@ -44,6 +61,72 @@ export class AuthService {
     private readonly storageService: StorageService,
     private readonly configService: ConfigService,
   ) {}
+
+  private normalizeEmailKey(email: string) {
+    return email.trim().toLowerCase();
+  }
+
+  private hasRecentSigninTotpVerification(email: string) {
+    const normalizedEmail = this.normalizeEmailKey(email);
+    const record = this.recentSigninTotpCache.get(normalizedEmail);
+    if (!record) {
+      return false;
+    }
+
+    if (record.expiresAt <= new Date()) {
+      this.recentSigninTotpCache.delete(normalizedEmail);
+      return false;
+    }
+
+    return true;
+  }
+
+  private markRecentSigninTotpVerification(email: string) {
+    this.recentSigninTotpCache.set(this.normalizeEmailKey(email), {
+      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+    });
+  }
+
+  private consumeRecentSigninTotpVerification(email: string) {
+    this.recentSigninTotpCache.delete(this.normalizeEmailKey(email));
+  }
+
+  private issueSigninTotpToken(email: string) {
+    const token = randomUUID();
+    this.signinTotpTokenCache.set(token, {
+      email: this.normalizeEmailKey(email),
+      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+    });
+    return token;
+  }
+
+  private hasValidSigninTotpToken(email: string, token?: string) {
+    if (!token) {
+      return false;
+    }
+
+    const record = this.signinTotpTokenCache.get(token);
+    if (!record) {
+      return false;
+    }
+
+    if (record.expiresAt <= new Date()) {
+      this.signinTotpTokenCache.delete(token);
+      return false;
+    }
+
+    if (record.email !== this.normalizeEmailKey(email)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private consumeSigninTotpToken(token?: string) {
+    if (token) {
+      this.signinTotpTokenCache.delete(token);
+    }
+  }
 
   private async generateAuthTokens(userId: string, email: string, role: string) {
     const payload = { sub: userId, email, role };
@@ -70,6 +153,10 @@ export class AuthService {
     return hash(value, { type: argon2id });
   }
 
+  private normalizeGovtIdType(value: string) {
+    return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
+  }
+
   private async hashSecurityAnswers(securityQuestions: { question: string; answer: string }[]) {
     return Promise.all(
       securityQuestions.map(async (entry) => ({
@@ -81,6 +168,16 @@ export class AuthService {
 
   private generateBackupCodes() {
     return Array.from({ length: 10 }, () => randomUUID().slice(0, 8).toUpperCase());
+  }
+
+  private generateAlphaNumericCode(length = 12) {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  }
+
+  private generateRecoveryCode(length = 25) {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
   }
 
   private async recordLoginAttempt(userId: string | null, email: string, success: boolean, reason: string, ip: string, userAgent: string) {
@@ -116,31 +213,100 @@ export class AuthService {
       throw new ConflictException("A user with this official email already exists.");
     }
 
+    if (!signupDto.identity.govtIdNumber?.trim()) {
+      throw new BadRequestException("Government ID number is required.");
+    }
+
     const passwordHash = await this.hashValue(signupDto.security.password);
     const securityQuestions = await this.hashSecurityAnswers(signupDto.security.securityQuestions);
-    const backupCodes = this.generateBackupCodes();
+    const typedContact = signupDto.contact as SignupDto["contact"] & {
+      alternateEmail?: string;
+      alternatePhone?: string;
+    };
+    const typedAdvanced = signupDto.advanced as SignupDto["advanced"] & {
+      backupCodes?: string[];
+      securityCodes?: string[];
+    };
+    const approver = (signupDto as SignupDto & {
+      approver?: { name?: string; email?: string; phone?: string };
+    }).approver;
+
+    const backupEmail = typedContact.personalEmail ?? typedContact.alternateEmail ?? undefined;
+    const secondaryPhone = typedContact.secondaryPhone ?? typedContact.alternatePhone ?? undefined;
+
+    const providedSecurityCodes = (typedAdvanced.securityCodes ?? [])
+      .map((code) => code.trim().toUpperCase())
+      .filter(Boolean);
+    const rawSecurityCodes = providedSecurityCodes.length > 0 ? providedSecurityCodes : this.generateBackupCodes();
+    const backupCodes = await Promise.all(rawSecurityCodes.map((code) => this.hashValue(code)));
+
+    const recoverySeed =
+      typedAdvanced.recoveryCode?.trim() ||
+      (typedAdvanced.backupCodes && typedAdvanced.backupCodes.length > 0
+        ? typedAdvanced.backupCodes[0].trim()
+        : "");
+    const normalizedOfficialEmail = this.normalizeEmailKey(signupDto.contact.officialEmail);
+    const cachedTotp = this.preSignupTotpCache.get(normalizedOfficialEmail);
 
     const user = await this.userService.createSuperAdmin({
       name: signupDto.identity.fullName,
       email: signupDto.contact.officialEmail,
+      username: signupDto.advanced.userId ?? undefined,
       password: passwordHash,
       profile: {
         govtIdType: signupDto.identity.govtIdType,
         govtIdUrl: signupDto.identity.govtIdUrl ?? null,
         phonePrimary: signupDto.contact.primaryPhone,
-        phoneSecondary: signupDto.contact.secondaryPhone,
-        backupEmail: signupDto.contact.personalEmail,
+        phoneSecondary: secondaryPhone,
+        backupEmail,
+        secondaryApproverName: approver?.name?.trim() || undefined,
+        secondaryApproverEmail: approver?.email?.trim() || undefined,
+        secondaryApproverPhone: approver?.phone?.trim() || undefined,
         googleId: signupDto.advanced.googleId ?? null,
         ipWhitelist: signupDto.advanced.ipWhitelist ?? [],
       },
       securityQuestions,
       backupCodes,
     });
-    if (signupDto.advanced.recoveryCode) {
+
+    if (
+      signupDto.advanced.totpEnabled &&
+      cachedTotp?.verified &&
+      cachedTotp.expiresAt > new Date()
+    ) {
+      await this.prisma.security.upsert({
+        where: { userId: user.id },
+        update: { totpSecret: cachedTotp.secret },
+        create: {
+          userId: user.id,
+          securityQuestions,
+          backupCodes,
+          totpSecret: cachedTotp.secret,
+        },
+      });
+      this.preSignupTotpCache.delete(normalizedOfficialEmail);
+    }
+
+    await this.prisma.govtIdStorage.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        type: this.normalizeGovtIdType(signupDto.identity.govtIdType),
+        fileUrl: signupDto.identity.govtIdUrl ?? "",
+        fingerprint: await this.hashValue(signupDto.identity.govtIdNumber.trim()),
+        verified: false,
+      },
+      update: {
+        type: this.normalizeGovtIdType(signupDto.identity.govtIdType),
+        fingerprint: await this.hashValue(signupDto.identity.govtIdNumber.trim()),
+      },
+    });
+
+    if (recoverySeed) {
       await this.prisma.recoveryCode.create({
         data: {
           userId: user.id,
-          codeHash: await hash(signupDto.advanced.recoveryCode),
+          codeHash: await this.hashValue(recoverySeed),
         },
       });
     }
@@ -195,7 +361,31 @@ export class AuthService {
 
     const passwordHash = await this.hashValue(signupDto.security.password);
     const securityQuestions = await this.hashSecurityAnswers(signupDto.security.securityQuestions);
-    const backupCodes = this.generateBackupCodes();
+    const typedContact = signupDto.contact as SignupDto["contact"] & {
+      alternateEmail?: string;
+      alternatePhone?: string;
+    };
+    const typedAdvanced = signupDto.advanced as SignupDto["advanced"] & {
+      backupCodes?: string[];
+      securityCodes?: string[];
+    };
+    const approver = (signupDto as SignupDto & {
+      approver?: { name?: string; email?: string; phone?: string };
+    }).approver;
+
+    const backupEmail = typedContact.personalEmail ?? typedContact.alternateEmail ?? undefined;
+    const secondaryPhone = typedContact.secondaryPhone ?? typedContact.alternatePhone ?? undefined;
+    const providedSecurityCodes = (typedAdvanced.securityCodes ?? [])
+      .map((code) => code.trim().toUpperCase())
+      .filter(Boolean);
+    const rawSecurityCodes = providedSecurityCodes.length > 0 ? providedSecurityCodes : this.generateBackupCodes();
+    const backupCodes = await Promise.all(rawSecurityCodes.map((code) => this.hashValue(code)));
+
+    const recoverySeed =
+      typedAdvanced.recoveryCode?.trim() ||
+      (typedAdvanced.backupCodes && typedAdvanced.backupCodes.length > 0
+        ? typedAdvanced.backupCodes[0].trim()
+        : "");
 
     const user = await this.userService.createPlatformAdmin({
       name: signupDto.identity.fullName,
@@ -206,8 +396,11 @@ export class AuthService {
         govtIdUrl: signupDto.identity.govtIdUrl ?? null,
         profilePhotoUrl: signupDto.identity.profilePhotoUrl ?? null,
         phonePrimary: signupDto.contact.primaryPhone,
-        phoneSecondary: signupDto.contact.secondaryPhone,
-        backupEmail: signupDto.contact.personalEmail,
+        phoneSecondary: secondaryPhone,
+        backupEmail,
+        secondaryApproverName: approver?.name?.trim() || undefined,
+        secondaryApproverEmail: approver?.email?.trim() || undefined,
+        secondaryApproverPhone: approver?.phone?.trim() || undefined,
         googleId: signupDto.advanced.googleId ?? null,
         ipWhitelist: signupDto.advanced.ipWhitelist ?? [],
       },
@@ -215,11 +408,28 @@ export class AuthService {
       backupCodes,
     });
 
-    if (signupDto.advanced.recoveryCode) {
+    if (signupDto.identity.govtIdNumber?.trim()) {
+      await this.prisma.govtIdStorage.upsert({
+        where: { userId: user.id },
+        create: {
+          userId: user.id,
+          type: this.normalizeGovtIdType(signupDto.identity.govtIdType),
+          fileUrl: signupDto.identity.govtIdUrl ?? "",
+          fingerprint: await this.hashValue(signupDto.identity.govtIdNumber.trim()),
+          verified: false,
+        },
+        update: {
+          type: this.normalizeGovtIdType(signupDto.identity.govtIdType),
+          fingerprint: await this.hashValue(signupDto.identity.govtIdNumber.trim()),
+        },
+      });
+    }
+
+    if (recoverySeed) {
       await this.prisma.recoveryCode.create({
         data: {
           userId: user.id,
-          codeHash: await hash(signupDto.advanced.recoveryCode),
+          codeHash: await this.hashValue(recoverySeed),
         },
       });
     }
@@ -352,9 +562,9 @@ export class AuthService {
     let emailDeliveryError: string | null = null;
     try {
       await this.emailService.sendOtpEmail(user.email, otpCode, "Signup");
-    } catch (error) {
+    } catch (error: any) {
       emailDeliverySuccess = false;
-      emailDeliveryError = error.message;
+      emailDeliveryError = error?.message ?? "Unknown email delivery error";
     }
 
     return {
@@ -363,6 +573,70 @@ export class AuthService {
       emailDeliverySuccess,
       emailDeliveryError,
     };
+  }
+
+  /** Send a real OTP email/SMS to an address that does not yet have an account. */
+  async sendSignupOtp(channel: "email" | "phone", target: string) {
+    const { randomInt } = await import("crypto");
+    const code = randomInt(100000, 999999).toString().padStart(6, "0");
+    const codeHash = await hash(code, { type: argon2id });
+    const key = `${channel}:${target.trim().toLowerCase()}`;
+    const isDev = this.configService.get<string>("NODE_ENV") !== "production";
+    this.signupOtpCache.set(key, { codeHash, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
+
+    let deliveryFailedInDev = false;
+    let deliveryErrorMessage: string | null = null;
+
+    if (channel === "email") {
+      try {
+        await this.emailService.sendOtpEmail(target.trim(), code, "Signup");
+        console.log(`[signup-otp] Email OTP sent to ${target}`);
+      } catch (err: any) {
+        console.error(`[signup-otp] SendGrid error:`, err?.message || err);
+        if (!isDev) {
+          throw new InternalServerErrorException(err?.message || "Failed to send OTP email.");
+        }
+        deliveryFailedInDev = true;
+        deliveryErrorMessage = err?.message || "Failed to send OTP email.";
+      }
+    } else {
+      try {
+        await this.smsService.sendOtp(target.trim(), code);
+        console.log(`[signup-otp] SMS OTP sent to ${target}`);
+      } catch (err: any) {
+        console.error(`[signup-otp] SMS error:`, err?.message || err);
+        if (!isDev) {
+          throw new InternalServerErrorException(err?.message || "Failed to send OTP SMS.");
+        }
+        deliveryFailedInDev = true;
+        deliveryErrorMessage = err?.message || "Failed to send OTP SMS.";
+      }
+    }
+
+    const message = deliveryFailedInDev
+      ? `OTP generated but ${channel} delivery failed in dev mode.`
+      : `OTP sent to ${channel}.`;
+
+    return {
+      message,
+      ...(deliveryFailedInDev && { deliveryError: deliveryErrorMessage }),
+      ...(isDev && { devOtp: code }),
+    };
+  }
+
+  /** Verify a pre-signup OTP code. */
+  async verifySignupOtp(channel: "email" | "phone", target: string, code: string) {
+    const key = `${channel}:${target.trim().toLowerCase()}`;
+    const record = this.signupOtpCache.get(key);
+    if (!record) throw new BadRequestException("OTP not found or already used.");
+    if (record.expiresAt < new Date()) {
+      this.signupOtpCache.delete(key);
+      throw new BadRequestException("OTP has expired.");
+    }
+    const valid = await verify(record.codeHash, code.trim());
+    if (!valid) throw new BadRequestException("Invalid OTP code.");
+    this.signupOtpCache.delete(key);
+    return { verified: true };
   }
 
   async sendOtp(sendOtpDto: SendOtpDto) {
@@ -429,13 +703,28 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, ip: string) {
-    const user = loginDto.email
-      ? await this.userService.findByEmail(loginDto.email)
-      : loginDto.phone
-      ? await this.userService.findByPhone(loginDto.phone)
-      : null;
+    // Resolve user by identifier (email / username / phone)
+    let user: Awaited<ReturnType<typeof this.userService.findByEmail>> | null = null;
+    const raw = loginDto.identifier?.trim();
+
+    if (raw) {
+      const looksLikePhone = /^[0-9+()\- ]{6,}$/.test(raw);
+      const looksLikeEmail = raw.includes("@");
+      if (looksLikeEmail) {
+        user = await this.userService.findByEmail(raw);
+      } else if (looksLikePhone) {
+        user = await this.userService.findByPhone(raw);
+      } else {
+        user = (await this.userService.findByUsername(raw)) as Awaited<ReturnType<typeof this.userService.findByEmail>>;
+      }
+    } else if (loginDto.email) {
+      user = await this.userService.findByEmail(loginDto.email);
+    } else if (loginDto.phone) {
+      user = await this.userService.findByPhone(loginDto.phone);
+    }
+
     const userAgent = this.configService.get<string>("USER_AGENT", "unknown");
-    const loginId = loginDto.email ?? loginDto.phone ?? "unknown";
+    const loginId = raw ?? loginDto.email ?? loginDto.phone ?? "unknown";
     const isProduction = process.env.NODE_ENV === "production";
 
     if (!user) {
@@ -476,8 +765,12 @@ export class AuthService {
     }
 
     const totpEnabled = !!user.security?.totpSecret;
+    const hasRecentTotpVerification = this.hasRecentSigninTotpVerification(user.email);
+    const hasSigninTotpToken = this.hasValidSigninTotpToken(user.email, loginDto.signinTotpToken);
     const requiresMfa =
       totpEnabled &&
+      !hasRecentTotpVerification &&
+      !hasSigninTotpToken &&
       !loginDto.otpCode &&
       !hasTotpCredential &&
       !hasAdditionalFallbackCredential;
@@ -502,6 +795,16 @@ export class AuthService {
       authVerified = true;
     }
 
+    if (!authVerified && hasRecentTotpVerification) {
+      authVerified = true;
+      this.consumeRecentSigninTotpVerification(user.email);
+    }
+
+    if (!authVerified && hasSigninTotpToken) {
+      authVerified = true;
+      this.consumeSigninTotpToken(loginDto.signinTotpToken);
+    }
+
     if (!authVerified && hasTotpCredential && user.security?.totpSecret) {
       const totpValid = await this.securityService.verifyTotp(user.security.totpSecret, loginDto.totpCode);
       if (totpValid) {
@@ -509,70 +812,41 @@ export class AuthService {
       }
     }
 
+    let recoveryCodeWasUsed = false;
+
     if (!authVerified && hasAdditionalFallbackCredential) {
-      const fallbackAllowed =
-        user.verification.failedAttempts >= 5 ||
-        user.verification.otpRequestCount >= 5 ||
-        (user.verification.lockedUntil && user.verification.lockedUntil > new Date());
+      let fallbackUsed = false;
 
-      if (!fallbackAllowed) {
-        let fallbackCredentialValid = false;
-
-        if (loginDto.backupCode && user.security) {
-          fallbackCredentialValid = await this.securityService.verifyBackupCode(user.id, loginDto.backupCode);
-        }
-
-        if (!fallbackCredentialValid && loginDto.recoveryCode) {
-          fallbackCredentialValid = await this.securityService.verifyRecoveryCode(user.id, loginDto.recoveryCode);
-        }
-
-        if (!fallbackCredentialValid && loginDto.securityAnswers?.length && user.security) {
-          fallbackCredentialValid = await this.securityService.verifySecurityAnswers(user.id, loginDto.securityAnswers);
-        }
-
-        if (!fallbackCredentialValid && loginDto.googleId && user.profile?.googleId) {
-          fallbackCredentialValid = loginDto.googleId.trim() === user.profile.googleId.trim();
-        }
-
-        if (fallbackCredentialValid) {
-          await this.recordLoginAttempt(user.id, user.email, false, "Fallback not allowed yet", ip, userAgent);
-          throw new ForbiddenException("Fallback authentication is only available after repeated OTP failures.");
+      if (loginDto.backupCode && user.security) {
+        const backupValid = await this.securityService.verifyBackupCode(user.id, loginDto.backupCode);
+        if (backupValid) {
+          fallbackUsed = true;
         }
       }
 
-      if (fallbackAllowed) {
-        let fallbackUsed = false;
-
-        if (loginDto.backupCode && user.security) {
-          const backupValid = await this.securityService.verifyBackupCode(user.id, loginDto.backupCode);
-          if (backupValid) {
-            fallbackUsed = true;
-          }
+      if (!fallbackUsed && loginDto.recoveryCode) {
+        const recoveryValid = await this.securityService.verifyRecoveryCode(user.id, loginDto.recoveryCode);
+        if (recoveryValid) {
+          fallbackUsed = true;
+          recoveryCodeWasUsed = true;
         }
+      }
 
-        if (!fallbackUsed && loginDto.recoveryCode) {
-          const recoveryValid = await this.securityService.verifyRecoveryCode(user.id, loginDto.recoveryCode);
-          if (recoveryValid) {
-            fallbackUsed = true;
-          }
+      if (!fallbackUsed && loginDto.securityAnswers?.length && user.security) {
+        const securityValid = await this.securityService.verifySecurityAnswers(user.id, loginDto.securityAnswers);
+        if (securityValid) {
+          fallbackUsed = true;
         }
+      }
 
-        if (!fallbackUsed && loginDto.securityAnswers?.length && user.security) {
-          const securityValid = await this.securityService.verifySecurityAnswers(user.id, loginDto.securityAnswers);
-          if (securityValid) {
-            fallbackUsed = true;
-          }
+      if (!fallbackUsed && loginDto.googleId && user.profile?.googleId) {
+        if (loginDto.googleId.trim() === user.profile.googleId.trim()) {
+          fallbackUsed = true;
         }
+      }
 
-        if (!fallbackUsed && loginDto.googleId && user.profile?.googleId) {
-          if (loginDto.googleId.trim() === user.profile.googleId.trim()) {
-            fallbackUsed = true;
-          }
-        }
-
-        if (fallbackUsed) {
-          authVerified = true;
-        }
+      if (fallbackUsed) {
+        authVerified = true;
       }
     }
 
@@ -611,6 +885,17 @@ export class AuthService {
       }
     }
 
+    let rotatedRecoveryCode: string | undefined;
+    if (recoveryCodeWasUsed) {
+      rotatedRecoveryCode = this.generateRecoveryCode(25);
+      await this.prisma.recoveryCode.create({
+        data: {
+          userId: user.id,
+          codeHash: await this.hashValue(rotatedRecoveryCode),
+        },
+      });
+    }
+
     const tokens = await this.generateAuthTokens(user.id, user.email, user.role);
     await this.recordLoginAttempt(user.id, user.email, true, "Authenticated", ip, userAgent);
 
@@ -619,21 +904,116 @@ export class AuthService {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
+      ...(rotatedRecoveryCode ? { rotatedRecoveryCode } : {}),
     };
   }
 
-  async validatePassword(email: string, password: string) {
-    const user = await this.userService.findByEmail(email);
+  async validatePassword(identifier: string, password: string) {
+    const user = await this.resolveUserByIdentifier(identifier);
     if (!user) {
       return { valid: false };
     }
-
     const isValid = await verify(user.password, password);
-    return { valid: isValid };
+    if (!isValid) {
+      return { valid: false };
+    }
+    // Return masked contact info so the frontend can show OTP delivery options
+    return {
+      valid: true,
+      maskedEmail: this.maskEmail(user.email),
+      maskedAltEmail: user.profile?.backupEmail
+        ? this.maskEmail(user.profile.backupEmail)
+        : user.email
+        ? this.maskEmail(user.email)
+        : null,
+      maskedPhone: user.profile?.phonePrimary ? this.maskPhone(user.profile.phonePrimary) : null,
+      maskedAltPhone: user.profile?.phoneSecondary
+        ? this.maskPhone(user.profile.phoneSecondary)
+        : user.profile?.phonePrimary
+        ? this.maskPhone(user.profile.phonePrimary)
+        : null,
+      govtIdType: user.profile?.govtIdType ?? null,
+      resolvedEmail: user.email,
+    };
+  }
+
+  async requestApproval(identifier: string) {
+    const user = await this.resolveUserByIdentifier(identifier);
+    if (!user) {
+      throw new UnauthorizedException("Account not found.");
+    }
+    // Generate a one-time 12-char alphanumeric approval code for the approver.
+    const approvalCode = this.generateAlphaNumericCode(12);
+    const codeHash = await this.hashValue(approvalCode);
+    // Store it as a recovery code (reuse existing flow)
+    await this.prisma.recoveryCode.create({
+      data: { userId: user.id, codeHash },
+    });
+    // Try to send to the configured secondary approver email first.
+    const profile = (user.profile ?? {}) as {
+      secondaryApproverEmail?: string | null;
+      secondaryApproverName?: string | null;
+      secondaryApproverPhone?: string | null;
+      backupEmail?: string | null;
+    };
+    const approverEmail = profile.secondaryApproverEmail ?? profile.backupEmail ?? user.email;
+    const approverName = profile.secondaryApproverName ?? "Secondary approver";
+    const approverPhone = profile.secondaryApproverPhone ?? null;
+    const isDev = this.configService.get<string>("NODE_ENV") !== "production";
+    try {
+      await this.emailService.sendOtpEmail(
+        approverEmail,
+        approvalCode,
+        `Approval Request: ${user.name} needs account recovery access (${approverName})`,
+      );
+    } catch {
+      // swallow delivery error in dev; surface in prod
+      if (!isDev) throw new InternalServerErrorException("Failed to send approval email.");
+    }
+    return {
+      message: "Approval request sent.",
+      sentTo: this.maskEmail(approverEmail),
+      approverName,
+      approverEmail: this.maskEmail(approverEmail),
+      approverPhone: approverPhone ? this.maskPhone(approverPhone) : null,
+      ...(isDev && { devCode: approvalCode, devOtp: approvalCode }),
+    };
+  }
+
+  private async resolveUserByIdentifier(raw: string) {
+    if (!raw?.trim()) return null;
+    const trimmed = raw.trim();
+    const looksLikeEmail = trimmed.includes("@");
+    const looksLikePhone = /^[0-9+()+\- ]{6,}$/.test(trimmed);
+    if (looksLikeEmail) return this.userService.findByEmail(trimmed);
+    if (looksLikePhone) return this.userService.findByPhone(trimmed);
+    return (await this.userService.findByUsername(trimmed)) as Awaited<ReturnType<typeof this.userService.findByEmail>>;
+  }
+
+  private maskEmail(email: string): string {
+    const [local, domain] = email.split("@");
+    if (!domain) return "***@***";
+    const shown = local.slice(0, Math.min(3, local.length));
+    const masked = "*".repeat(Math.max(3, local.length - 3));
+    return `${shown}${masked}@${domain}`;
+  }
+
+  private maskPhone(phone: string): string {
+    const digits = phone.replace(/[^0-9+]/g, "");
+    if (digits.length <= 5) return "**********";
+    const prefix = digits.slice(0, Math.min(5, digits.length - 2));
+    const suffix = digits.slice(-2);
+    const stars = "*".repeat(Math.max(4, digits.length - prefix.length - 2));
+    return `${prefix}${stars}${suffix}`;
   }
 
   async requestOtp(requestOtpDto: RequestOtpDto) {
-    const user = await this.userService.findByEmail(requestOtpDto.email);
+    const raw = requestOtpDto.identifier ?? requestOtpDto.email ?? "";
+    const user = await this.resolveUserByIdentifier(raw);
+    const isDev = this.configService.get<string>("NODE_ENV") !== "production";
+    const channel = requestOtpDto.channel ?? "primary";
+    const isAlternate = channel === "alternate";
+
     if (!user) {
       throw new UnauthorizedException("Account not found.");
     }
@@ -653,28 +1033,50 @@ export class AuthService {
     }
 
     const method = requestOtpDto.method === "phone" ? OtpDeliveryMethod.PHONE : OtpDeliveryMethod.EMAIL;
-    const destination = requestOtpDto.method === "phone" ? user.profile?.phonePrimary : user.email;
+    const destination =
+      requestOtpDto.method === "phone"
+        ? isAlternate
+          ? user.profile?.phoneSecondary ?? user.profile?.phonePrimary
+          : user.profile?.phonePrimary
+        : isAlternate
+        ? user.profile?.backupEmail ?? user.email
+        : user.email;
+
     if (!destination) {
-      throw new BadRequestException("Requested OTP delivery method is not available for this account.");
+      throw new BadRequestException(
+        isAlternate
+          ? "Requested alternate OTP delivery method is not available for this account."
+          : "Requested OTP delivery method is not available for this account.",
+      );
     }
 
-    const { code: otpCode, limitReached } = await this.otpService.createOtpForUser(user.id, method, destination);
+    const maxRequests = isAlternate ? 3 : 5;
+    const otpDestinationKey = `${channel}:${destination}`;
+    const { code: otpCode, limitReached } = await this.otpService.createOtpForUser(
+      user.id,
+      method,
+      otpDestinationKey,
+      10,
+      maxRequests,
+      !isAlternate,
+    );
 
     if (requestOtpDto.method === "email" && otpCode) {
-      await this.emailService.sendOtpEmail(user.email, otpCode, requestOtpDto.purpose === "recovery" ? "Recovery" : "Sign-in");
+      await this.emailService.sendOtpEmail(destination, otpCode, requestOtpDto.purpose === "recovery" ? "Recovery" : "Sign-in");
     }
 
     if (requestOtpDto.method === "phone" && otpCode) {
-      if (!user.profile?.phonePrimary) {
+      if (!destination) {
         throw new BadRequestException("Phone number is not configured for this account.");
       }
-      await this.smsService.sendOtp(user.profile.phonePrimary, otpCode);
+      await this.smsService.sendOtp(destination, otpCode);
     }
 
     if (limitReached) {
       return {
-        message: "OTP generation has reached its limit for the next 5 hours. Use fallback authentication methods instead.",
+        message: `OTP generation has reached its limit (${maxRequests}) for the next 5 hours on this contact. Use the next authentication method instead.`,
         deliveryMethod: requestOtpDto.method,
+        channel,
         limitReached: true,
       };
     }
@@ -682,6 +1084,8 @@ export class AuthService {
     return {
       message: `OTP sent to ${requestOtpDto.method}.`,
       deliveryMethod: requestOtpDto.method,
+      channel,
+      ...(isDev && otpCode ? { devOtp: otpCode } : {}),
     };
   }
 
@@ -711,32 +1115,86 @@ export class AuthService {
   }
 
   async setupTwoFactor(setupDto: Setup2FADto) {
-    const user = await this.userService.findByEmail(setupDto.email);
+    const normalizedEmail = this.normalizeEmailKey(setupDto.email);
+    const normalizedTotpCode = setupDto.totpCode?.replace(/\s+/g, "").trim();
+    const user = await this.userService.findByEmail(normalizedEmail);
+
+    // ── Pre-signup flow: user doesn't exist yet ──────────────────────────────
     if (!user) {
-      throw new UnauthorizedException("Invalid credentials.");
+      if (normalizedTotpCode) {
+        // Verify TOTP against cached secret
+        const cached = this.preSignupTotpCache.get(normalizedEmail);
+        if (!cached || cached.expiresAt < new Date()) {
+          this.preSignupTotpCache.delete(normalizedEmail);
+          throw new BadRequestException("Session expired. Please generate a new QR code.");
+        }
+        const valid = await this.securityService.verifyTotp(cached.secret, normalizedTotpCode);
+        if (!valid) {
+          throw new BadRequestException("Invalid authenticator code.");
+        }
+        this.preSignupTotpCache.set(normalizedEmail, {
+          secret: cached.secret,
+          verified: true,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+        return { verified: true, message: "Authenticator code verified." };
+      }
+
+      // Generate TOTP secret without writing to DB (delegate to SecurityService which has working speakeasy import)
+      const { secret, otpauthUrl, qrCodeDataUrl } = await this.securityService.generateTotpSecret(normalizedEmail);
+
+      // Cache for 10 minutes
+      this.preSignupTotpCache.set(normalizedEmail, {
+        secret: secret,
+        verified: false,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      });
+
+      return { otpauthUrl, qrCodeDataUrl };
     }
 
-    if (setupDto.totpCode) {
-      if (!user.isVerified) {
-        throw new BadRequestException("Account must be verified before enabling two-factor authentication.");
+    // ── Post-signup flow: user exists ────────────────────────────────────────
+    if (normalizedTotpCode) {
+      if (!setupDto.password) {
+        throw new BadRequestException("Password is required to verify Google Authenticator during sign in.");
       }
+
+      const isPasswordValid = await verify(user.password, setupDto.password);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException("Invalid credentials.");
+      }
+
       const security = await this.prisma.security.findUnique({ where: { userId: user.id } });
-      if (!security?.totpSecret || !(await this.securityService.verifyTotp(security.totpSecret, setupDto.totpCode))) {
+      if (!security?.totpSecret || !(await this.securityService.verifyTotp(security.totpSecret, normalizedTotpCode))) {
         throw new BadRequestException("Invalid authenticator code.");
       }
+
+      this.markRecentSigninTotpVerification(user.email);
+      const signinTotpToken = this.issueSigninTotpToken(user.email);
+
       return {
         verified: true,
         message: "Two-factor authentication has been enabled.",
+        signinTotpToken,
       };
     }
 
     if (!setupDto.password) {
+      const security = await this.prisma.security.findUnique({ where: { userId: user.id } });
+      if (security?.totpSecret) {
+        return this.securityService.generateTotpQrFromSecret(user.email, security.totpSecret);
+      }
       return this.securityService.initializeTwoFactor(user.id, user.email);
     }
 
     const isPasswordValid = await verify(user.password, setupDto.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException("Invalid credentials.");
+    }
+
+    const security = await this.prisma.security.findUnique({ where: { userId: user.id } });
+    if (security?.totpSecret) {
+      return this.securityService.generateTotpQrFromSecret(user.email, security.totpSecret);
     }
 
     return this.securityService.initializeTwoFactor(user.id, user.email);
@@ -765,17 +1223,37 @@ export class AuthService {
     return { message: "Token refreshed.", accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, expiresAt: tokens.expiresAt };
   }
 
-  async uploadGovtId(email: string, govtIdType: string, buffer: Buffer, filename: string, contentType: string) {
+  async uploadGovtId(
+    email: string,
+    govtIdType: string,
+    buffer: Buffer,
+    filename: string,
+    contentType: string,
+    govtIdNumber?: string,
+  ) {
     const user = await this.userService.findByEmail(email);
     if (!user) {
       throw new UnauthorizedException("Unable to upload ID.");
     }
 
     const fileUrl = await this.storageService.uploadGovtId(filename, buffer, contentType);
+    const normalizedType = this.normalizeGovtIdType(govtIdType);
+    const fingerprint = govtIdNumber?.trim() ? await this.hashValue(govtIdNumber.trim()) : null;
     await this.prisma.govtIdStorage.upsert({
       where: { userId: user.id },
-      create: { userId: user.id, type: govtIdType, fileUrl, verified: false },
-      update: { fileUrl, type: govtIdType, verified: false },
+      create: {
+        userId: user.id,
+        type: normalizedType,
+        fileUrl,
+        fingerprint,
+        verified: false,
+      },
+      update: {
+        fileUrl,
+        type: normalizedType,
+        verified: false,
+        ...(fingerprint ? { fingerprint } : {}),
+      },
     });
 
     return { message: "Government ID uploaded securely.", fileUrl };
@@ -845,11 +1323,33 @@ export class AuthService {
         }
         return { message: "TOTP recovery accepted. Reset your password now." };
       case "govtId":
-        const govId = await this.prisma.govtIdStorage.findUnique({ where: { userId: user.id } });
-        if (!govId || govId.verified !== true) {
-          throw new UnauthorizedException("Government ID verification pending.");
+        if (!recoverDto.govtIdType?.trim() || !recoverDto.govtIdNumber?.trim()) {
+          throw new BadRequestException("Government ID type and number are required.");
         }
-        return { message: "Government ID verified. Recovery may proceed after security review." };
+
+        const govId = await this.prisma.govtIdStorage.findUnique({ where: { userId: user.id } });
+        if (!govId || !govId.fingerprint) {
+          throw new UnauthorizedException("Government ID is not configured for this account.");
+        }
+
+        const storedType = this.normalizeGovtIdType(govId.type);
+        const providedType = this.normalizeGovtIdType(recoverDto.govtIdType);
+        if (storedType !== providedType) {
+          throw new UnauthorizedException("Government ID details do not match.");
+        }
+
+        const idMatches = await verify(govId.fingerprint, recoverDto.govtIdNumber.trim());
+        if (!idMatches) {
+          throw new UnauthorizedException("Government ID details do not match.");
+        }
+
+        const tokens = await this.generateAuthTokens(user.id, user.email, user.role);
+        return {
+          message: "Government ID matched. Logged in successfully.",
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+        };
       default:
         throw new BadRequestException("Unsupported recovery method.");
     }

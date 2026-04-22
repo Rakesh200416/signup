@@ -16,7 +16,14 @@ export class OtpService {
     return hash(code, { type: argon2id });
   }
 
-  async createOtpForUser(userId: string, method: OtpDeliveryMethod, destination: string, expiresInMinutes = 10) {
+  async createOtpForUser(
+    userId: string,
+    method: OtpDeliveryMethod,
+    destination: string,
+    expiresInMinutes = 10,
+    maxRequests = 5,
+    trackPrimaryCounter = true,
+  ) {
     const verification = await this.prisma.verification.upsert({
       where: { userId },
       create: {
@@ -32,28 +39,35 @@ export class OtpService {
     });
 
     const now = new Date();
-    const updateData: any = {};
-    let currentCount = verification.otpRequestCount ?? 0;
+    const blockWindowMs = 5 * 60 * 60 * 1000;
+    const windowStart = new Date(now.getTime() - blockWindowMs);
 
-    if (verification.otpRequestBlockedUntil && verification.otpRequestBlockedUntil > now) {
-      throw new ForbiddenException("OTP generation is temporarily limited for 5 hours. Use fallback authentication methods.");
+    const recentCount = await this.prisma.otpCode.count({
+      where: {
+        userId,
+        method,
+        destination,
+        createdAt: { gte: windowStart },
+      },
+    });
+
+    if (recentCount >= maxRequests) {
+      throw new ForbiddenException(`OTP generation is temporarily limited for this contact. You can request again after 5 hours.`);
     }
 
-    if (verification.otpRequestBlockedUntil && verification.otpRequestBlockedUntil <= now) {
-      currentCount = 0;
-      updateData.otpRequestBlockedUntil = null;
+    const nextRequestCount = recentCount + 1;
+    const limitReached = nextRequestCount >= maxRequests;
+
+    if (trackPrimaryCounter) {
+      await this.prisma.verification.update({
+        where: { userId },
+        data: {
+          otpRequestCount: (verification.otpRequestCount ?? 0) + 1,
+          ...(limitReached ? { otpRequestBlockedUntil: new Date(Date.now() + blockWindowMs) } : {}),
+        },
+      });
     }
 
-    const nextRequestCount = currentCount + 1;
-    updateData.otpRequestCount = nextRequestCount;
-
-    if (nextRequestCount >= 5) {
-      updateData.otpRequestBlockedUntil = new Date(Date.now() + 5 * 60 * 60 * 1000);
-    }
-
-    await this.prisma.verification.update({ where: { userId }, data: updateData });
-
-    const limitReached = nextRequestCount >= 5;
     const code = this.generateNumericCode();
     const codeHash = await this.hashCode(code);
     const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -53,7 +53,7 @@ export default function Setup2FaPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#e0e5ec] px-6 py-10 text-[#0f172a] dark:bg-[#111827] dark:text-[#f8fafc]">
+    <main className="min-h-screen bg-[#e6e8ee] px-6 py-10 text-[#0f172a] dark:bg-[#111827] dark:text-[#f8fafc]">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
         <div className="w-full max-w-3xl">
           <NeumorphicCard>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -202,7 +202,7 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
             width: panelRect.width,
             zIndex: 9999,
           }}
-          className="overflow-hidden rounded-[28px] bg-[#e0e5ec] shadow-[6px_6px_12px_#b8bec9,-6px_-6px_12px_#ffffff] neomorphic-dropdown-panel"
+          className="overflow-hidden rounded-[28px] bg-[#e6e8ee] shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff] neomorphic-dropdown-panel"
         >
           <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold text-[#0f172a]">
             <button
@@ -246,7 +246,7 @@ export function DatePicker({ value, onChange, placeholder, className = "" }: Dat
                       key={iso}
                       type="button"
                       onClick={() => handleSelectDate(date)}
-                      className={`rounded-[18px] px-2 py-2 text-sm transition ${inMonth ? "bg-[#e0e5ec] text-[#0f172a]" : "text-[#94a3b8]"} ${isSelected ? "bg-[#2563eb] text-white shadow-[inset_4px_4px_8px_#1d4ed8]" : "hover:bg-[#dbeafe]"}`}
+                      className={`rounded-[18px] px-2 py-2 text-sm transition ${inMonth ? "bg-[#e6e8ee] text-[#0f172a]" : "text-[#94a3b8]"} ${isSelected ? "bg-[#2563eb] text-white shadow-[inset_4px_4px_8px_#1d4ed8]" : "hover:bg-[#dbeafe]"}`}
                     >
                       {date.getDate()}
                     </button>

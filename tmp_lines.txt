@@ -1,0 +1,4 @@
+
+      {!hideOtpSection ? (
+        <button type="button" className={primaryButton} onClick={requestOtp} disabled={isRequestingOtp || isOtpLocked}>
+          {isOtpLocked ? "OTP locked" : otpRequested ? "Resend OTP" : "Request OTP"}

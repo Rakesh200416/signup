@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
@@ -231,7 +231,7 @@ export function ModernSigninExperience({
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#e6e7ee] px-4 py-10 text-[#1f2f53]">
+    <main className="relative min-h-screen overflow-hidden bg-[#e6e8ee] px-4 py-10 text-[#1f2f53]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.96),_rgba(230,231,238,0.86)_38%,_rgba(215,219,232,0.98)_100%)]" />
       <div className="pointer-events-none absolute left-[-4rem] top-12 h-56 w-56 rounded-full bg-white/70 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 right-[-2rem] h-72 w-72 rounded-full bg-[#d2d7e6] blur-3xl" />

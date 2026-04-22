@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -26,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" data-scroll-behavior="smooth" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full bg-[#e0e5ec] text-[#0f172a] selection:bg-[#8ec9ff] selection:text-white dark:bg-[#111827] dark:text-[#f8fafc]">
+      <body className="min-h-full bg-[#e6e8ee] text-[#0f172a] selection:bg-[#8ec9ff] selection:text-white dark:bg-[#111827] dark:text-[#f8fafc]">
         {children}
       </body>
     </html>

@@ -76,6 +76,22 @@ export class AuthController {
     return this.authService.sendOtp(sendOtpDto);
   }
 
+  @Post("signup-otp/send")
+  async sendSignupOtp(@Body() body: { channel: "email" | "phone"; target: string }) {
+    if (!body.channel || !body.target) {
+      throw new Error("channel and target are required");
+    }
+    return this.authService.sendSignupOtp(body.channel, body.target);
+  }
+
+  @Post("signup-otp/verify")
+  async verifySignupOtp(@Body() body: { channel: "email" | "phone"; target: string; code: string }) {
+    if (!body.channel || !body.target || !body.code) {
+      throw new Error("channel, target, and code are required");
+    }
+    return this.authService.verifySignupOtp(body.channel, body.target, body.code);
+  }
+
   @Post("login")
   @UsePipes(new ZodValidationPipe(loginSchema))
   async login(@Body() loginDto: LoginDto, @Req() req: Request) {
@@ -86,7 +102,15 @@ export class AuthController {
   @Post("validate-password")
   @UsePipes(new ZodValidationPipe(validatePasswordSchema))
   async validatePassword(@Body() validatePasswordDto: ValidatePasswordDto) {
-    return this.authService.validatePassword(validatePasswordDto.email, validatePasswordDto.password);
+    return this.authService.validatePassword(validatePasswordDto.identifier, validatePasswordDto.password);
+  }
+
+  @Post("request-approver")
+  async requestApprover(@Body() body: { identifier: string }) {
+    if (!body.identifier?.trim()) {
+      throw new Error("identifier is required.");
+    }
+    return this.authService.requestApproval(body.identifier.trim());
   }
 
   @Post("invite-platform-admin")
@@ -140,7 +164,14 @@ export class AuthController {
     if (!file) {
       throw new UnauthorizedException("Government ID file upload is required.");
     }
-    return this.authService.uploadGovtId(uploadIdDto.email, uploadIdDto.govtIdType, file.buffer, file.originalname, file.mimetype);
+    return this.authService.uploadGovtId(
+      uploadIdDto.email,
+      uploadIdDto.govtIdType,
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      uploadIdDto.govtIdNumber,
+    );
   }
 
   @Post("upload-profile-photo")

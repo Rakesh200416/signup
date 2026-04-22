@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -433,7 +433,7 @@ export function PlatformAdminInviteForm() {
             </label>
           </div>
 
-          <div className="rounded-[24px] bg-[#e0e5ec] p-4 shadow-[6px_6px_12px_#b8bec9,-6px_-6px_12px_#ffffff]">
+          <div className="rounded-[24px] bg-[#e6e8ee] p-4 shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff]">
             <p className="mb-3 text-sm font-medium text-[#334155]">Password policy</p>
             <div className="grid gap-2">
               {passwordPolicyRules.map((rule) => (
@@ -450,7 +450,7 @@ export function PlatformAdminInviteForm() {
                 </div>
               ))}
             </div>
-            <div className="mt-4 rounded-[18px] bg-[#e0e5ec] px-4 py-3 text-sm font-medium text-[#334155] shadow-[inset_4px_4px_8px_#b8bec9,inset_-4px_-4px_8px_#ffffff]">
+            <div className="mt-4 rounded-[18px] bg-[#e6e8ee] px-4 py-3 text-sm font-medium text-[#334155] shadow-[inset_4px_4px_8px_#b8b9be,inset_-4px_-4px_8px_#ffffff]">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <span>{passwordValidCount === 5 ? "🟢" : passwordValidCount >= 3 ? "🟡" : "🔴"}</span>

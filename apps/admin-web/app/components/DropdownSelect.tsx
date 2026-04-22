@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
@@ -13,9 +13,20 @@ type DropdownSelectProps = {
   options: DropdownOption[];
   placeholder?: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
+  className?: string;
+  buttonClassName?: string;
 };
 
-export function DropdownSelect({ value, options, placeholder, onChange }: DropdownSelectProps) {
+export function DropdownSelect({
+  value,
+  options,
+  placeholder,
+  onChange,
+  disabled = false,
+  className,
+  buttonClassName,
+}: DropdownSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [panelRect, setPanelRect] = useState<{ left: number; top: number; width: number } | null>(null);
@@ -32,7 +43,7 @@ export function DropdownSelect({ value, options, placeholder, onChange }: Dropdo
     setPanelRect({
       left: rect.left + window.scrollX,
       top: rect.bottom + window.scrollY + 8,
-      width: Math.min(rect.width, 280),
+      width: rect.width,
     });
   };
 
@@ -59,19 +70,46 @@ export function DropdownSelect({ value, options, placeholder, onChange }: Dropdo
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
+
   const selectedOption = options.find((option) => option.value === value);
   const label = selectedOption?.label ?? placeholder ?? "Select an option";
 
   return (
-    <div className="relative w-full">
+    <div className={`relative w-full ${className ?? ""}`.trim()}>
+      {/* Trigger button — Themesberg form-control inset style */}
       <button
         ref={buttonRef}
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
-        className="neumorphic-input flex w-full items-center justify-between px-4 py-3 text-sm text-left text-[#0f172a]"
+        onClick={() => {
+          if (!disabled) {
+            setIsOpen((open) => !open);
+          }
+        }}
+        className={`form-control flex w-full items-center justify-between text-sm text-left ${buttonClassName ?? ""}`.trim()}
+        style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.65 : 1 }}
+        disabled={disabled}
+        aria-expanded={isOpen}
       >
-        <span className={`${value ? "text-[#0f172a]" : "text-[#64748b]"}`}>{label}</span>
-        <span className="text-[#475569]">▾</span>
+        <span style={{ color: value ? "#44476a" : "#93a5be" }}>{label}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          fill="currentColor"
+          viewBox="0 0 16 16"
+          style={{
+            transition: "transform .2s ease",
+            transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+            color: "#44476a",
+          }}
+        >
+          <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/>
+        </svg>
       </button>
 
       {mounted && isOpen && panelRect && createPortal(
@@ -84,7 +122,7 @@ export function DropdownSelect({ value, options, placeholder, onChange }: Dropdo
             width: panelRect.width,
             zIndex: 9999,
           }}
-          className="overflow-hidden rounded-[24px] bg-[#e0e5ec] shadow-[6px_6px_12px_#b8bec9,-6px_-6px_12px_#ffffff]"
+          className="dropdown-menu show"
         >
           {options.map((option) => (
             <button
@@ -94,9 +132,8 @@ export function DropdownSelect({ value, options, placeholder, onChange }: Dropdo
                 onChange(option.value);
                 setIsOpen(false);
               }}
-              className={`w-full text-left px-4 py-3 text-sm text-[#111827] transition ${
-                option.value === value ? "bg-[#dbe4ef]" : "hover:bg-[#dbeafe]"
-              }`}
+              className={`dropdown-item w-full text-left ${option.value === value ? "active" : ""}`}
+              style={option.value === value ? { boxShadow: "inset 2px 2px 5px #b8b9be, inset -3px -3px 7px #ffffff", color: "#31344b" } : {}}
             >
               {option.label}
             </button>

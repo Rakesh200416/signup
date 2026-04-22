@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import Image from "next/image";
@@ -8,12 +8,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "react-hot-toast";
 import { z } from "zod";
-import { Mail, Lock, ShieldCheck, ChevronDown, CircleCheckBig, CircleAlert } from "lucide-react";
+import { Mail, Lock, ShieldCheck, ChevronDown, CircleCheckBig, CircleAlert, Send, LogIn, ChevronUp, ArrowRight, ListFilter, Smartphone, User } from "lucide-react";
 import { DropdownSelect } from "./DropdownSelect";
+import { NeumorphicButton } from "./NeumorphicButton";
 import api, { extractApiErrorMessage } from "../lib/api";
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1, "Enter your email, username, or phone number."),
   password: z.string().min(8),
   otpCode: z
     .string()
@@ -26,22 +27,22 @@ const loginSchema = z.object({
 });
 
 const sectionCard =
-  "rounded-[24px] border border-white/80 bg-[#e6e7ee] p-5 shadow-[6px_6px_12px_#c8c9d1,-6px_-6px_12px_#ffffff] transition duration-300 hover:shadow-[8px_8px_20px_rgba(200,201,209,0.35),-8px_-8px_20px_rgba(255,255,255,0.8)]";
+  "rounded-[24px] border border-white/80 bg-[#e6e8ee] p-5 shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff] transition duration-300 hover:shadow-[8px_8px_20px_rgba(200,201,209,0.35),-8px_-8px_20px_rgba(255,255,255,0.8)]";
 
 const inputGroup =
-  "grid grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-[#e6e7ee] bg-[#e6e7ee] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff] transition duration-300 focus-within:shadow-[inset_2px_2px_5px_#a9abb4,inset_-2px_-2px_5px_#ffffff,0_0_0_4px_rgba(75,87,146,0.12)] hover:shadow-[inset_2px_2px_5px_rgba(75,87,146,0.12),inset_-2px_-2px_5px_#ffffff]";
+  "grid grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-[#e6e8ee] bg-[#e6e8ee] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff] transition duration-300 focus-within:shadow-[inset_2px_2px_5px_#a9abb4,inset_-2px_-2px_5px_#ffffff,0_0_0_4px_rgba(75,87,146,0.12)] hover:shadow-[inset_2px_2px_5px_rgba(75,87,146,0.12),inset_-2px_-2px_5px_#ffffff]";
 
 const inputField =
   "w-full bg-transparent px-4 py-4 text-base text-[#273457] outline-none placeholder:text-[#8e97b2] transition duration-300 hover:text-[#1d2a4b]";
 
 const otpBox =
-  "flex h-16 items-center justify-center rounded-[16px] border border-[#d8dbe6] bg-[#e6e7ee] text-xl font-semibold text-[#273457] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff] transition duration-300 hover:shadow-[inset_3px_3px_7px_rgba(200,201,209,0.4),inset_-3px_-3px_7px_rgba(255,255,255,0.9)]";
+  "flex h-16 items-center justify-center rounded-[16px] border border-[#d8dbe6] bg-[#e6e8ee] text-xl font-semibold text-[#273457] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff] transition duration-300 hover:shadow-[inset_3px_3px_7px_rgba(200,201,209,0.4),inset_-3px_-3px_7px_rgba(255,255,255,0.9)]";
 
 const primaryButton =
-  "w-full rounded-[20px] border border-white/80 bg-[#e6e7ee] px-6 py-4 text-sm font-semibold text-[#273457] shadow-[6px_6px_12px_#c8c9d1,-6px_-6px_12px_#ffffff] transition duration-300 hover:-translate-y-0.5 hover:shadow-[8px_8px_16px_rgba(200,201,209,0.35),-8px_-8px_16px_rgba(255,255,255,0.8)] active:translate-y-0.5 active:shadow-[inset_2px_2px_5px_rgba(200,201,209,0.7),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] disabled:cursor-not-allowed disabled:opacity-70";
+  "w-full rounded-[20px] border border-white/80 bg-[#e6e8ee] px-6 py-4 text-sm font-semibold text-[#273457] shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff] transition duration-300 hover:-translate-y-0.5 hover:shadow-[8px_8px_16px_rgba(200,201,209,0.35),-8px_-8px_16px_rgba(255,255,255,0.8)] active:translate-y-0.5 active:shadow-[inset_2px_2px_5px_rgba(200,201,209,0.7),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] disabled:cursor-not-allowed disabled:opacity-70";
 
 const secondaryButton =
-  "w-full rounded-[18px] border border-white/80 bg-[#e6e7ee] px-5 py-3 text-sm font-medium text-[#273457] shadow-[6px_6px_12px_#c8c9d1,-6px_-6px_12px_#ffffff] transition duration-300 hover:-translate-y-0.5 hover:shadow-[8px_8px_16px_rgba(200,201,209,0.28),-8px_-8px_16px_rgba(255,255,255,0.82)] active:translate-y-0.5 active:shadow-[inset_2px_2px_5px_rgba(200,201,209,0.75),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] disabled:cursor-not-allowed disabled:opacity-70";
+  "w-full rounded-[18px] border border-white/80 bg-[#e6e8ee] px-5 py-3 text-sm font-medium text-[#273457] shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff] transition duration-300 hover:-translate-y-0.5 hover:shadow-[8px_8px_16px_rgba(200,201,209,0.28),-8px_-8px_16px_rgba(255,255,255,0.82)] active:translate-y-0.5 active:shadow-[inset_2px_2px_5px_rgba(200,201,209,0.75),inset_-2px_-2px_5px_rgba(255,255,255,0.95)] disabled:cursor-not-allowed disabled:opacity-70";
 
 function getToastMessage(error: unknown, fallback: string) {
   return extractApiErrorMessage(error, fallback);
@@ -79,7 +80,7 @@ export function NeumorphicLoginForm({
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [otpExpiredToastShown, setOtpExpiredToastShown] = useState(false);
 
-  const fallbackMethodOptions = (allowedFallbackMethods ?? ["totp", "backup", "recovery", "security"]).map((method) => ({
+  const fallbackMethodOptions = (allowedFallbackMethods ?? ["totp", "recovery", "security", "backup"]).map((method) => ({
     value: method,
     label:
       method === "totp"
@@ -122,13 +123,17 @@ export function NeumorphicLoginForm({
     formState: { errors },
   } = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: initialEmail, password: "", otpCode: "", captchaToken: "", rememberMe: true },
+    defaultValues: { identifier: initialEmail, password: "", otpCode: "", captchaToken: "", rememberMe: true },
   });
 
-  const email = watch("email");
-  const password = watch("password");
+  const identifier = watch("identifier") as string;
+  const password = watch("password") as string;
   const otpCode = watch("otpCode");
   const rememberMe = watch("rememberMe");
+  // Derive email/phone for legacy calls that need them
+  const isEmailIdentifier = identifier?.includes("@");
+  const email = isEmailIdentifier ? identifier : "";
+  const phone = (!isEmailIdentifier && /^[0-9+()+\- ]{6,}$/.test(identifier ?? "")) ? identifier : "";
   const otpHasError = Boolean(errors.otpCode);
   const otpBoxClass = `h-14 w-full rounded-[18px] border-2 px-4 text-center text-xl font-semibold text-[#273457] bg-white outline-none transition duration-200 ${otpHasError ? "border-rose-400 shadow-[0_0_0_1px_rgba(244,174,178,0.6)]" : "border-slate-300 shadow-[0_0_0_1px_rgba(148,163,184,0.35)]"} focus:border-[#6272ff] focus:ring-2 focus:ring-[#8ec9ff]/30 focus:shadow-[0_0_0_0_rgba(0,0,0,0.08)]`;
   const isPasswordVerified = passwordStatus === "valid";
@@ -141,12 +146,15 @@ export function NeumorphicLoginForm({
       ? "text-amber-600"
       : "text-rose-500"
     : "text-[#415174]";
-  const currentFallbackLabel = availableFallbackMethods.find((option) => option.value === currentFallbackMethod)?.label ?? "selected fallback";
+  const currentFallbackLabel = availableFallbackMethods.find((m) => m.value === currentFallbackMethod)?.label ?? "backup method";
 
-  const fetchCsrfToken = async () => (await api.get("/auth/csrf-token")).data?.csrfToken;
+  const fetchCsrfToken = async (): Promise<string> => {
+    const res = await api.get("/auth/csrf-token");
+    return res.data.token as string;
+  };
 
-  const validatePassword = async (emailValue: string, passwordValue: string) => {
-    if (!emailValue?.trim() || !passwordValue?.trim() || passwordValue.trim().length < 8) {
+  const validatePassword = async (identifierValue: string, passwordValue: string) => {
+    if (!identifierValue?.trim() || !passwordValue?.trim() || passwordValue.trim().length < 8) {
       setPasswordStatus("idle");
       setPasswordValidationMessage("");
       return;
@@ -155,7 +163,7 @@ export function NeumorphicLoginForm({
       const csrfToken = await fetchCsrfToken();
       const response = await api.post(
         "/auth/validate-password",
-        { email: emailValue.trim(), password: passwordValue.trim() },
+        { identifier: identifierValue.trim(), password: passwordValue.trim() },
         { headers: { "X-CSRF-Token": csrfToken } },
       );
       if (response.data?.valid) {
@@ -221,13 +229,13 @@ export function NeumorphicLoginForm({
     if (hideOtpSection) return;
     if (!isPasswordVerified) return toast.error("Verify your password before requesting OTP.");
     if (isOtpLocked) return toast.error("OTP is locked. Wait until the lock expires before requesting again.");
-    if (!email || !password) return toast.error("Enter email and password before requesting OTP.");
+    if (!identifier || !password) return toast.error("Enter your identifier and password before requesting OTP.");
     try {
       setIsRequestingOtp(true);
       const csrfToken = await fetchCsrfToken();
       const response = await api.post(
         "/auth/request-otp",
-        { email, method: deliveryMethod },
+        { email: email || undefined, phone: phone || undefined, identifier, method: deliveryMethod },
         { headers: { "X-CSRF-Token": csrfToken } },
       );
       const nextCount = otpRequestCount + 1;
@@ -413,7 +421,7 @@ export function NeumorphicLoginForm({
       setIsLoggingIn(true);
       const csrfToken = await fetchCsrfToken();
       const loginPayload: Record<string, any> = {
-        email: values.email.trim(),
+        identifier: values.identifier.trim(),
         password: values.password,
         captchaToken: values.captchaToken || "login-captcha-token",
         acceptTerms: true,
@@ -474,23 +482,22 @@ export function NeumorphicLoginForm({
   };
 
   return (
-    <div className="w-full max-w-[780px] rounded-[28px] border border-white/80 bg-[#e6e7ee] p-7 shadow-[18px_18px_36px_#c8c9d1,-18px_-18px_36px_#ffffff] transition-all duration-300 sm:p-10">
-      <div className="mb-8 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.35em] text-[#5c6d94]">Welcome back</p>
-        <h1 className="mt-4 text-4xl font-semibold leading-tight text-[#273457] sm:text-5xl">{pageTitle}</h1>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-[#6d789e]">Secure super admin and platform admin access with modern OTP, authenticator, and fallback sign-in options in a soft neumorphic layout.</p>
-      </div>
-
+    <div className="space-y-6">
       <form className="grid gap-5" onSubmit={handleSubmit(completeSignIn)}>
         <label className="space-y-3 text-sm text-[#415174]">
-          <span className="font-medium">Email address</span>
+          <span className="font-medium">Email, Username, or Phone</span>
           <div className={inputGroup}>
             <div className="flex items-center justify-center border-r border-[#d8dbe6] text-[#5c6d94]">
-              <Mail className="h-5 w-5" />
+              <User className="h-5 w-5" />
             </div>
-            <input placeholder="example@company.com" className={inputField} {...register("email")} />
+            <input
+              placeholder="email@company.com · PRGEА123456 · +919876543210"
+              className={inputField}
+              autoComplete="username"
+              {...register("identifier")}
+            />
           </div>
-          <p className="min-h-[1rem] text-xs text-rose-500">{errors.email?.message as string}</p>
+          <p className="min-h-[1rem] text-xs text-rose-500">{errors.identifier?.message as string}</p>
         </label>
 
         <label className="space-y-3 text-sm text-[#415174]">
@@ -507,7 +514,7 @@ export function NeumorphicLoginForm({
               placeholder="Create password"
               className={inputField}
               {...register("password")}
-              onBlur={() => validatePassword(email, password)}
+              onBlur={() => validatePassword(identifier, password)}
             />
           </div>
           <div className="flex items-center gap-2 text-xs">
@@ -519,10 +526,10 @@ export function NeumorphicLoginForm({
           </div>
         </label>
 
-        <div className="flex flex-col gap-3 rounded-[20px] border border-white/80 bg-[#e6e7ee] p-5 shadow-[6px_6px_12px_#c8c9d1,-6px_-6px_12px_#ffffff] sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-[20px] border border-white/80 bg-[#e6e8ee] p-5 shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff] sm:flex-row sm:items-center sm:justify-between">
           <label className="flex items-center gap-3 text-sm text-[#415174]">
             <input type="checkbox" className="peer sr-only" {...register("rememberMe")} />
-            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#d7dae6] bg-[#e6e7ee] shadow-[6px_6px_12px_#c8c9d1,-6px_-6px_12px_#ffffff] peer-checked:shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff]">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#d7dae6] bg-[#e6e8ee] shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff] peer-checked:shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff]">
               <span className={`h-2.5 w-2.5 rounded-full bg-[#4f73c8] transition ${rememberMe ? "scale-100" : "scale-0"}`} />
             </span>
             <span>Remember me</span>
@@ -545,9 +552,9 @@ export function NeumorphicLoginForm({
                   onClick={() => setDeliveryMethod(method)}
                   className={`rounded-[18px] border px-4 py-3 text-sm font-medium text-[#273457] transition ${
                     deliveryMethod === method
-                      ? "border-[#9fb0d1] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff]"
-                      : "border-white/80 shadow-[6px_6px_12px_#c8c9d1,-6px_-6px_12px_#ffffff] hover:-translate-y-0.5"
-                  } bg-[#e6e7ee]`}
+                      ? "border-[#9fb0d1] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff]"
+                      : "border-white/80 shadow-[6px_6px_12px_#b8b9be,-6px_-6px_12px_#ffffff] hover:-translate-y-0.5"
+                  } bg-[#e6e8ee]`}
                 >
                   OTP via {method}
                 </button>
@@ -558,9 +565,9 @@ export function NeumorphicLoginForm({
       </div>
 
       {!hideOtpSection ? (
-        <button type="button" className={primaryButton} onClick={requestOtp} disabled={isRequestingOtp || isOtpLocked}>
+        <NeumorphicButton type="button" variant="primary" pill block onClick={requestOtp} disabled={isRequestingOtp || isOtpLocked} iconLeft={<Send className="h-4 w-4" />}>
           {isOtpLocked ? "OTP locked" : otpRequested ? "Resend OTP" : "Request OTP"}
-        </button>
+        </NeumorphicButton>
       ) : null}
 
         {!showFallback && !hideOtpSection && (
@@ -573,7 +580,7 @@ export function NeumorphicLoginForm({
               <span className="text-xs text-[#7d8aa7]">6-digit secure code</span>
             </div>
 
-            <div className="group grid gap-4 rounded-[20px] border border-[#d8dbe6] bg-[#e6e7ee] p-5 shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff] text-center">
+            <div className="group grid gap-4 rounded-[20px] border border-[#d8dbe6] bg-[#e6e8ee] p-5 shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff] text-center">
               <div className="mx-auto max-w-[28rem]">
                 <div className="mb-4 text-center">
                   <p className="text-sm font-semibold text-[#415174]">OTP verification</p>
@@ -599,13 +606,13 @@ export function NeumorphicLoginForm({
 
               <div className="mt-4 flex justify-center">
                 {!otpVerified && !fallbackVerified ? (
-                  <button type="button" className={primaryButton} onClick={() => verifyOtpCode()} disabled={!otpRequested || isRequestingOtp}>
+                  <NeumorphicButton type="button" variant="primary" pill block onClick={() => verifyOtpCode()} disabled={!otpRequested || isRequestingOtp} iconLeft={<ShieldCheck className="h-4 w-4" />}>
                     Verify OTP
-                  </button>
+                  </NeumorphicButton>
                 ) : (
-                  <button type="submit" className={primaryButton} disabled={isLoggingIn}>
+                  <NeumorphicButton type="submit" variant="primary" pill block disabled={isLoggingIn} iconLeft={<LogIn className="h-4 w-4" />}>
                     Sign in
-                  </button>
+                  </NeumorphicButton>
                 )}
               </div>
             </div>
@@ -623,7 +630,7 @@ export function NeumorphicLoginForm({
         )}
 
           {showFallback && (
-            <div className="mt-5 rounded-[20px] border border-white/80 bg-[#e6e7ee] p-4 text-sm text-[#415174] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff]">
+            <div className="mt-5 rounded-[20px] border border-white/80 bg-[#e6e8ee] p-4 text-sm text-[#415174] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff]">
               <p className="font-semibold text-[#415174]">Alternative verification methods available.</p>
               <p className="mt-2 text-[#72809f]">
                 Use {currentFallbackLabel} now{allowFallbackSwitch ? ", or switch to another remaining method if verification fails." : "."}
@@ -638,9 +645,9 @@ export function NeumorphicLoginForm({
                 <p className="text-sm font-semibold text-[#415174]">Choose a fallback method</p>
                 <p className="mt-2 text-sm text-[#72809f]">Pick one alternative verification method to proceed.</p>
               </div>
-              <button type="button" className={`${secondaryButton} w-full sm:w-auto`} onClick={() => setShowFallback(false)}>
+              <NeumorphicButton type="button" variant="soft" pill onClick={() => setShowFallback(false)} iconLeft={<ChevronUp className="h-4 w-4" />}>
                 Hide fallback options
-              </button>
+              </NeumorphicButton>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
               <DropdownSelect
@@ -652,9 +659,9 @@ export function NeumorphicLoginForm({
                 placeholder="Select fallback method"
                 onChange={(value) => setSelectedMethod(value as "totp" | "backup" | "recovery" | "security")}
               />
-              <button type="button" className={secondaryButton} onClick={chooseOtherMethod}>
+              <NeumorphicButton type="button" variant="soft" pill onClick={chooseOtherMethod} iconRight={<ArrowRight className="h-4 w-4" />}>
                 Use selected method
-              </button>
+              </NeumorphicButton>
             </div>
           </div>
         )}
@@ -663,9 +670,9 @@ export function NeumorphicLoginForm({
           <div className="rounded-[20px] border border-amber-200 bg-[#f9f5ea] p-4 text-sm text-[#7a5a12] shadow-[inset_2px_2px_5px_rgba(200,201,209,0.25),inset_-2px_-2px_5px_rgba(255,255,255,0.65)]">
             <p className="font-semibold">OTP generation is temporarily limited.</p>
             <p className="mt-2">Email and phone OTP requests will resume later. Use Authenticator or fallback verification meanwhile.</p>
-            <button type="button" className={`${secondaryButton} mt-4`} onClick={openFallbackMethods}>
+            <NeumorphicButton type="button" variant="soft" pill onClick={openFallbackMethods} iconLeft={<ListFilter className="h-4 w-4" />}>
               Check fallback methods
-            </button>
+            </NeumorphicButton>
           </div>
         )}
 
@@ -677,45 +684,47 @@ export function NeumorphicLoginForm({
               value={totpInput}
               onChange={(event) => setTotpInput(event.target.value)}
               placeholder="123456"
-              className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e7ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff] outline-none"
+              className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e8ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff] outline-none"
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <button type="button" className={secondaryButton} onClick={verifyFallbackMethod} disabled={isVerifyingFallback}>
+              <NeumorphicButton type="button" variant="soft" pill onClick={verifyFallbackMethod} disabled={isVerifyingFallback} iconLeft={<ShieldCheck className="h-4 w-4" />}>
                 Verify authenticator
-              </button>
+              </NeumorphicButton>
               {fallbackVerified ? (
-                <button type="submit" className={primaryButton} disabled={isLoggingIn}>
+                <NeumorphicButton type="submit" variant="primary" pill block disabled={isLoggingIn} iconLeft={<LogIn className="h-4 w-4" />}>
                   Sign in
-                </button>
+                </NeumorphicButton>
               ) : fallbackAttemptFailed && availableFallbackMethods.length > 0 && allowFallbackSwitch ? (
-                <button
+                <NeumorphicButton
                   type="button"
-                  className={secondaryButton}
+                  variant="soft" pill
                   onClick={() => {
                     setFallbackSelectionOpen(true);
                     setShowFallback(true);
                     setFallbackAttemptFailed(false);
                   }}
+                  iconRight={<ArrowRight className="h-4 w-4" />}
                 >
                   Choose another method
-                </button>
+                </NeumorphicButton>
               ) : null}
             </div>
 
-            <div className="mt-8 rounded-[18px] border border-[#d8dbe6] bg-[#f8fbff] p-4 shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff]">
+            <div className="mt-8 rounded-[18px] border border-[#d8dbe6] bg-[#f8fbff] p-4 shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff]">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-[#273457]">Google Authenticator Setup</p>
                   <p className="mt-1 text-sm text-[#72809f]">Scan the QR code to add this account to your Authenticator app.</p>
                 </div>
-                <button
+                <NeumorphicButton
                   type="button"
-                  className={`${secondaryButton} w-full sm:w-auto ${isInitializingTotp ? "opacity-70 cursor-not-allowed" : ""}`}
+                  variant="soft" pill className={isInitializingTotp ? "opacity-70 cursor-not-allowed" : ""}
                   onClick={initiateTotpSetup}
                   disabled={isInitializingTotp}
+                  iconLeft={<Smartphone className="h-4 w-4" />}
                 >
                   {qrCodeDataUrl ? "Refresh QR code" : "Show QR scanner"}
-                </button>
+                </NeumorphicButton>
               </div>
               {qrCodeDataUrl ? (
                 <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto]">
@@ -759,29 +768,30 @@ export function NeumorphicLoginForm({
                   setSecurityAnswers(next);
                 }}
                 placeholder={`Answer ${index + 1}`}
-                className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e7ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff] outline-none"
+                className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e8ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff] outline-none"
               />
             ))}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <button type="button" className={secondaryButton} onClick={verifyFallbackMethod} disabled={isVerifyingFallback}>
+              <NeumorphicButton type="button" variant="soft" pill onClick={verifyFallbackMethod} disabled={isVerifyingFallback} iconLeft={<ShieldCheck className="h-4 w-4" />}>
                 Verify answers
-              </button>
+              </NeumorphicButton>
               {fallbackVerified ? (
-                <button type="submit" className={primaryButton} disabled={isLoggingIn}>
+                <NeumorphicButton type="submit" variant="primary" pill block disabled={isLoggingIn} iconLeft={<LogIn className="h-4 w-4" />}>
                   Sign in
-                </button>
+                </NeumorphicButton>
               ) : fallbackAttemptFailed && availableFallbackMethods.length > 0 && allowFallbackSwitch ? (
-                <button
+                <NeumorphicButton
                   type="button"
-                  className={secondaryButton}
+                  variant="soft" pill
                   onClick={() => {
                     setFallbackSelectionOpen(true);
                     setShowFallback(true);
                     setFallbackAttemptFailed(false);
                   }}
+                  iconRight={<ArrowRight className="h-4 w-4" />}
                 >
                   Choose another method
-                </button>
+                </NeumorphicButton>
               ) : null}
             </div>
           </div>
@@ -795,28 +805,29 @@ export function NeumorphicLoginForm({
               value={backupCodeInput}
               onChange={(event) => setBackupCodeInput(event.target.value)}
               placeholder="Enter backup code"
-              className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e7ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff] outline-none"
+              className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e8ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff] outline-none"
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <button type="button" className={secondaryButton} onClick={verifyFallbackMethod} disabled={isVerifyingFallback}>
+              <NeumorphicButton type="button" variant="soft" pill onClick={verifyFallbackMethod} disabled={isVerifyingFallback} iconLeft={<ShieldCheck className="h-4 w-4" />}>
                 Verify backup code
-              </button>
+              </NeumorphicButton>
               {fallbackVerified ? (
-                <button type="submit" className={primaryButton} disabled={isLoggingIn}>
+                <NeumorphicButton type="submit" variant="primary" pill block disabled={isLoggingIn} iconLeft={<LogIn className="h-4 w-4" />}>
                   Sign in
-                </button>
+                </NeumorphicButton>
               ) : fallbackAttemptFailed && availableFallbackMethods.length > 0 && allowFallbackSwitch ? (
-                <button
+                <NeumorphicButton
                   type="button"
-                  className={secondaryButton}
+                  variant="soft" pill
                   onClick={() => {
                     setFallbackSelectionOpen(true);
                     setShowFallback(true);
                     setFallbackAttemptFailed(false);
                   }}
+                  iconRight={<ArrowRight className="h-4 w-4" />}
                 >
                   Choose another method
-                </button>
+                </NeumorphicButton>
               ) : null}
             </div>
           </div>
@@ -830,28 +841,29 @@ export function NeumorphicLoginForm({
               value={recoveryCodeInput}
               onChange={(event) => setRecoveryCodeInput(event.target.value)}
               placeholder="Enter recovery code"
-              className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e7ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#c8c9d1,inset_-2px_-2px_5px_#ffffff] outline-none"
+              className="mt-4 w-full rounded-[18px] border border-[#d8dbe6] bg-[#e6e8ee] px-4 py-4 text-sm text-[#273457] shadow-[inset_2px_2px_5px_#b8b9be,inset_-2px_-2px_5px_#ffffff] outline-none"
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <button type="button" className={secondaryButton} onClick={verifyFallbackMethod} disabled={isVerifyingFallback}>
+              <NeumorphicButton type="button" variant="soft" pill onClick={verifyFallbackMethod} disabled={isVerifyingFallback} iconLeft={<ShieldCheck className="h-4 w-4" />}>
                 Verify recovery code
-              </button>
+              </NeumorphicButton>
               {fallbackVerified ? (
-                <button type="submit" className={primaryButton} disabled={isLoggingIn}>
+                <NeumorphicButton type="submit" variant="primary" pill block disabled={isLoggingIn} iconLeft={<LogIn className="h-4 w-4" />}>
                   Sign in
-                </button>
+                </NeumorphicButton>
               ) : fallbackAttemptFailed && availableFallbackMethods.length > 0 && allowFallbackSwitch ? (
-                <button
+                <NeumorphicButton
                   type="button"
-                  className={secondaryButton}
+                  variant="soft" pill
                   onClick={() => {
                     setFallbackSelectionOpen(true);
                     setShowFallback(true);
                     setFallbackAttemptFailed(false);
                   }}
+                  iconRight={<ArrowRight className="h-4 w-4" />}
                 >
                   Choose another method
-                </button>
+                </NeumorphicButton>
               ) : null}
             </div>
           </div>

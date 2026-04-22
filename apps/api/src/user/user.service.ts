@@ -6,8 +6,24 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
   findByEmail(email: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        email: {
+          equals: email.trim(),
+          mode: "insensitive",
+        },
+      },
+      include: {
+        profile: true,
+        security: true,
+        verification: true,
+      },
+    });
+  }
+
+  findByUsername(username: string) {
     return this.prisma.user.findUnique({
-      where: { email },
+      where: { username },
       include: {
         profile: true,
         security: true,
@@ -17,10 +33,14 @@ export class UserService {
   }
 
   findByPhone(phone: string) {
+    // Normalize: extract last 10 digits to handle +91XXXXXXXXXX, 0XXXXXXXXXX, XXXXXXXXXX
+    const digits = phone.replace(/[^\d]/g, '');
+    const last10 = digits.slice(-10);
+    if (!last10 || last10.length < 7) return Promise.resolve(null);
     return this.prisma.user.findFirst({
       where: {
         profile: {
-          phonePrimary: phone,
+          phonePrimary: { endsWith: last10 },
         },
       },
       include: {
@@ -34,6 +54,7 @@ export class UserService {
   async createSuperAdmin(data: {
     name: string;
     email: string;
+    username?: string;
     password: string;
     profile: {
       govtIdType: string;
@@ -41,6 +62,9 @@ export class UserService {
       phonePrimary: string;
       phoneSecondary?: string;
       backupEmail?: string;
+      secondaryApproverName?: string;
+      secondaryApproverEmail?: string;
+      secondaryApproverPhone?: string;
       googleId?: string | null;
       ipWhitelist?: string[];
     };
@@ -51,10 +75,11 @@ export class UserService {
       data: {
         name: data.name,
         email: data.email,
+        username: data.username ?? null,
         password: data.password,
         role: "SUPER_ADMIN",
         isVerified: false,
-        isApproved: false,
+        isApproved: true,
         profile: {
           create: {
             govtIdType: data.profile.govtIdType,
@@ -62,6 +87,9 @@ export class UserService {
             phonePrimary: data.profile.phonePrimary,
             phoneSecondary: data.profile.phoneSecondary ?? null,
             backupEmail: data.profile.backupEmail ?? null,
+            secondaryApproverName: data.profile.secondaryApproverName ?? null,
+            secondaryApproverEmail: data.profile.secondaryApproverEmail ?? null,
+            secondaryApproverPhone: data.profile.secondaryApproverPhone ?? null,
             googleId: data.profile.googleId ?? null,
             ipWhitelist: data.profile.ipWhitelist ?? [],
           },
@@ -101,6 +129,9 @@ export class UserService {
       phonePrimary: string;
       phoneSecondary?: string;
       backupEmail?: string;
+      secondaryApproverName?: string;
+      secondaryApproverEmail?: string;
+      secondaryApproverPhone?: string;
       googleId?: string | null;
       ipWhitelist?: string[];
     };
@@ -123,6 +154,9 @@ export class UserService {
             phonePrimary: data.profile.phonePrimary,
             phoneSecondary: data.profile.phoneSecondary ?? null,
             backupEmail: data.profile.backupEmail ?? null,
+            secondaryApproverName: data.profile.secondaryApproverName ?? null,
+            secondaryApproverEmail: data.profile.secondaryApproverEmail ?? null,
+            secondaryApproverPhone: data.profile.secondaryApproverPhone ?? null,
             googleId: data.profile.googleId ?? null,
             ipWhitelist: data.profile.ipWhitelist ?? [],
           },

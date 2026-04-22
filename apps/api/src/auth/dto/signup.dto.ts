@@ -5,14 +5,17 @@ export const signupSchema = z.object({
     fullName: z.string().min(3),
     dob: z.string().min(8),
     govtIdType: z.string().min(2),
+    govtIdNumber: z.string().min(4).optional(),
     govtIdUrl: z.string().url().optional(),
     profilePhotoUrl: z.string().url().optional(),
   }),
   contact: z.object({
     officialEmail: z.string().email(),
     personalEmail: z.string().email().optional(),
+    alternateEmail: z.string().email().optional(),
     primaryPhone: z.string().min(8),
     secondaryPhone: z.string().min(8).optional(),
+    alternatePhone: z.string().min(8).optional(),
   }),
   security: z
     .object({
@@ -38,17 +41,26 @@ export const signupSchema = z.object({
       path: ["confirmPassword"],
     }),
   advanced: z.object({
+    userId: z.string().optional(),
     totpEnabled: z.boolean().optional(),
     magicLinkEmail: z.string().email().optional(),
     backupCodes: z.array(z.string()).optional(),
+    securityCodes: z.array(z.string()).optional(),
     recoveryCode: z
       .string()
       .min(8, "Recovery code must be at least 8 characters.")
-      .regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]+$/, "Recovery code must contain letters and numbers only.")
       .optional(),
     ipWhitelist: z.array(z.string()).optional(),
     googleId: z.string().min(3).optional(),
   }),
+  approver: z
+    .object({
+      name: z.string().min(2),
+      role: z.string().optional(),
+      email: z.string().email(),
+      phone: z.string().min(8),
+    })
+    .optional(),
 });
 
 export type SignupDto = z.infer<typeof signupSchema>;
